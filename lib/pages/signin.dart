@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'homepage.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -19,22 +20,34 @@ class _LoginPageState extends State<LoginPage> {
         _isLoading = true;
       });
 
-      // Simple API call print statement
-      print(
-          'API Call: Attempting login with Employee ID: ${_employeeIdController.text}');
+      // Hardcoded credentials for testing
+      String employeeId = _employeeIdController.text;
+      String password = _passwordController.text;
 
       // Simulate API delay
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 1));
 
       setState(() {
         _isLoading = false;
       });
 
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Login attempt completed - check console')),
-      );
+      // Check hardcoded credentials
+      if (employeeId == 'admin' && password == 'admin') {
+        // Navigate to homepage on successful login
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+        );
+      } else {
+        // Show error message for wrong credentials
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Invalid credentials! Use username: admin, password: admin'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

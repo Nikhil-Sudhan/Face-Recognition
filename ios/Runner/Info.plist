@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs access to camera for face recognition attendance marking.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs access to microphone for camera functionality.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to photo library to save attendance photos.</string>
 </dict>
 </plist>

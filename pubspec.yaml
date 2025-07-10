@@ -40,6 +40,12 @@ dependencies:
   path: ^1.8.3
   path_provider: ^2.1.1
   
+  # HTTP client for API calls
+  http: ^1.1.0
+  
+  # Local storage
+  shared_preferences: ^2.2.2
+  
   # Image processing and manipulation
   image: ^4.1.7
   image_picker: ^1.0.7

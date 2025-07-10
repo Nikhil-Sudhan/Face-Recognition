@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
-import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/employee.dart';
 import '../services/database_service.dart';
@@ -83,23 +82,18 @@ class _AddEditEmployeePageState extends State<AddEditEmployeePage> {
 
     try {
       final empId = int.parse(_empIdController.text);
-      String? savedImagePath;
       String? faceData;
 
       // Handle face data saving
       if (_faceImagePath != null) {
         if (widget.employee == null) {
           // New employee - save image
-          savedImagePath =
-              await ImageStorageService.saveFaceImage(_faceImagePath!, empId);
+          await ImageStorageService.saveFaceImage(_faceImagePath!, empId);
         } else {
           // Existing employee - update image if changed
           final currentPath = await ImageStorageService.getFaceImagePath(empId);
           if (currentPath != _faceImagePath) {
-            savedImagePath = await ImageStorageService.updateFaceImage(
-                _faceImagePath!, empId);
-          } else {
-            savedImagePath = currentPath;
+            await ImageStorageService.updateFaceImage(_faceImagePath!, empId);
           }
         }
       }

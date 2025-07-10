@@ -36,9 +36,6 @@ class ImageStorageService {
   // Save face image with employee ID as filename
   static Future<String> saveFaceImage(String tempImagePath, int empId) async {
     try {
-      print('Saving face image for employee $empId');
-      print('Temp image path: $tempImagePath');
-
       // Verify temp file exists
       final tempFile = File(tempImagePath);
       if (!await tempFile.exists()) {
@@ -46,26 +43,21 @@ class ImageStorageService {
       }
 
       final faceDir = await _faceImagesDir;
-      print('Face images directory: ${faceDir.path}');
 
       final fileName = 'emp_${empId}_face.jpg';
       final savedImagePath = path.join(faceDir.path, fileName);
-      print('Saving to: $savedImagePath');
 
       // Copy the temporary image to permanent location
       final savedFile = await tempFile.copy(savedImagePath);
-      print('Image saved successfully to: ${savedFile.path}');
 
       // Delete the temporary file only if it's different from saved location
       if (tempImagePath != savedImagePath && await tempFile.exists()) {
         await tempFile.delete();
-        print('Temporary file deleted');
       }
 
       return savedFile.path;
     } catch (e) {
       print('Error saving face image with path_provider: $e');
-      print('Falling back to simple storage...');
       try {
         return await SimpleImageStorage.saveFaceImage(tempImagePath, empId);
       } catch (e2) {

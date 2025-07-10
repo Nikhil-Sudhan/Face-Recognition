@@ -1,10 +1,8 @@
-import 'dart:typed_data';
 import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:camera/camera.dart';
-import 'package:image_picker/image_picker.dart';
 
 class FaceRecognitionService {
   static bool _isInitialized = false;
@@ -17,9 +15,7 @@ class FaceRecognitionService {
     if (_isInitialized) return true;
 
     try {
-      print('Initializing face recognition service...');
       _isInitialized = true;
-      print('Face recognition service initialized successfully');
       return true;
     } catch (e) {
       print('Error initializing face recognition: $e');
@@ -259,16 +255,6 @@ class FaceRecognitionService {
       final face = faces.first;
       final faceRect = face.boundingBox;
 
-      print('Face detection results:');
-      print(
-          '  Face bounds: ${faceRect.left}, ${faceRect.top}, ${faceRect.width}, ${faceRect.height}');
-      if (face.headEulerAngleY != null) {
-        print('  Head rotation Y: ${face.headEulerAngleY}°');
-      }
-      if (face.headEulerAngleZ != null) {
-        print('  Head rotation Z: ${face.headEulerAngleZ}°');
-      }
-
       // Check face orientation
       if (face.headEulerAngleY != null && face.headEulerAngleY!.abs() > 30) {
         return {
@@ -309,11 +295,6 @@ class FaceRecognitionService {
 
       // Calculate quality score based on face size and image quality
       final quality = min(1.0, faceRatio * 8); // Improved quality calculation
-
-      print('Face processing completed:');
-      print('  Face ratio: ${faceRatio.toStringAsFixed(4)}');
-      print('  Quality score: ${quality.toStringAsFixed(4)}');
-      print('  Embedding length: ${embedding.length}');
 
       return {
         'success': true,
@@ -415,14 +396,8 @@ class FaceRecognitionService {
     String? bestMatchId;
     final List<Map<String, dynamic>> allMatches = [];
 
-    print('Finding best match among ${storedEmbeddings.length} stored faces');
-    print('Query embedding length: ${queryEmbedding.length}');
-    print('Threshold: $_threshold');
-
     for (final entry in storedEmbeddings.entries) {
       final similarity = compareEmbeddings(queryEmbedding, entry.value);
-      print(
-          'Employee ${entry.key}: similarity = ${similarity.toStringAsFixed(4)}');
 
       allMatches.add({
         'employeeId': entry.key,
@@ -437,16 +412,8 @@ class FaceRecognitionService {
 
     // Sort matches by similarity for debugging
     allMatches.sort((a, b) => b['similarity'].compareTo(a['similarity']));
-    print('Top 3 matches:');
-    for (int i = 0; i < min(3, allMatches.length); i++) {
-      final match = allMatches[i];
-      print(
-          '  ${i + 1}. Employee ${match['employeeId']}: ${match['similarity'].toStringAsFixed(4)}');
-    }
 
     final isMatch = bestSimilarity >= _threshold;
-    print(
-        'Best match: Employee $bestMatchId with confidence ${bestSimilarity.toStringAsFixed(4)} (${isMatch ? "ACCEPTED" : "REJECTED"})');
 
     return {
       'match': isMatch,

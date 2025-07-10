@@ -54,16 +54,11 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
   }
 
   Future<void> _requestPermissionsAndInitialize() async {
-    print('DEBUG: Requesting camera permissions...');
-
     final status = await Permission.camera.request();
-    print('DEBUG: Camera permission status: $status');
 
     if (status == PermissionStatus.granted) {
-      print('DEBUG: Camera permission granted, initializing camera');
       _initializeCamera();
     } else {
-      print('DEBUG: Camera permission denied');
       setState(() {
         _statusMessage =
             'Camera permission required. Please grant camera access.';
@@ -207,9 +202,6 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
           .where((emp) => emp.faceData != null && emp.faceData!.isNotEmpty)
           .toList();
 
-      print('DEBUG: Total employees: ${employees.length}');
-      print('DEBUG: Employees with face data: ${employeesWithFaces.length}');
-
       if (employeesWithFaces.isEmpty) {
         setState(() {
           _statusMessage =
@@ -225,20 +217,14 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
           final embedding =
               FaceRecognitionService.decodeEmbedding(employee.faceData!);
           storedEmbeddings[employee.empId.toString()] = embedding;
-          print(
-              'DEBUG: Loaded embedding for employee ${employee.empId} (${employee.name}) - length: ${embedding.length}');
         } catch (e) {
           print('Error decoding embedding for employee ${employee.empId}: $e');
         }
       }
 
       // Perform face recognition
-      print(
-          'DEBUG: Starting face recognition with captured embedding length: ${capturedEmbedding.length}');
       final recognitionResult = FaceRecognitionService.findBestMatch(
           capturedEmbedding, storedEmbeddings);
-
-      print('DEBUG: Recognition result: ${recognitionResult}');
 
       if (recognitionResult['match'] == true) {
         final employeeIdStr = recognitionResult['employeeId'] as String;
@@ -249,14 +235,10 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
         final recognizedEmployee =
             employeesWithFaces.firstWhere((emp) => emp.empId == employeeId);
 
-        print(
-            'DEBUG: Face recognized as ${recognizedEmployee.name} with confidence $confidence');
-
         // Mark attendance
         await _markAttendance(recognizedEmployee, confidence);
       } else {
         final confidence = recognitionResult['confidence'] as double;
-        print('DEBUG: Face not recognized. Best confidence was: $confidence');
 
         setState(() {
           _statusMessage =
@@ -455,7 +437,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
           if (_attendanceMarked && _recognizedEmployee != null)
             Positioned.fill(
               child: Container(
-                color: Colors.green.withOpacity(0.9),
+                color: Colors.green.withValues(alpha: 0.9),
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -479,7 +461,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
                         padding: const EdgeInsets.all(20),
                         margin: const EdgeInsets.symmetric(horizontal: 30),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                           borderRadius: BorderRadius.circular(15),
                         ),
                         child: Column(
@@ -535,7 +517,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.9),
+                  color: Colors.red.withValues(alpha: 0.9),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(

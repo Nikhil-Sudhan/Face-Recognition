@@ -40,16 +40,11 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
   }
 
   Future<void> _requestPermissionsAndInitialize() async {
-    print('DEBUG: Requesting camera permissions...');
-
     final status = await Permission.camera.request();
-    print('DEBUG: Camera permission status: $status');
 
     if (status == PermissionStatus.granted) {
-      print('DEBUG: Camera permission granted, initializing camera');
       _initializeCamera();
     } else {
-      print('DEBUG: Camera permission denied');
       setState(() {
         _statusMessage =
             'Camera permission required. Please grant camera access.';
@@ -100,17 +95,9 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
 
   Future<void> _initializeCamera() async {
     try {
-      print('DEBUG: Getting available cameras...');
       _cameras = await availableCameras();
-      print('DEBUG: Found ${_cameras.length} cameras');
 
       if (_cameras.isNotEmpty) {
-        // Print camera details for debugging
-        for (int i = 0; i < _cameras.length; i++) {
-          print(
-              'DEBUG: Camera $i: ${_cameras[i].name}, ${_cameras[i].lensDirection}');
-        }
-
         // Prefer front camera for selfies
         try {
           _selectedCameraIndex = _cameras.indexWhere(
@@ -119,21 +106,17 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
           if (_selectedCameraIndex == -1) {
             _selectedCameraIndex = 0;
           }
-          print('DEBUG: Selected camera index: $_selectedCameraIndex');
         } catch (e) {
-          print('DEBUG: Error selecting camera: $e');
           _selectedCameraIndex = 0;
         }
 
         await _setupCamera(_selectedCameraIndex);
       } else {
-        print('DEBUG: No cameras found');
         setState(() {
           _statusMessage = 'No camera available';
         });
       }
     } catch (e) {
-      print('DEBUG: Error initializing camera: $e');
       setState(() {
         _statusMessage = 'Error initializing camera: $e';
       });
@@ -141,14 +124,10 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
   }
 
   Future<void> _setupCamera(int cameraIndex) async {
-    print('DEBUG: Setting up camera at index $cameraIndex');
-
     if (_controller != null) {
-      print('DEBUG: Disposing previous controller');
       await _controller!.dispose();
     }
 
-    print('DEBUG: Creating new camera controller');
     _controller = CameraController(
       _cameras[cameraIndex],
       ResolutionPreset.medium,
@@ -156,20 +135,16 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
     );
 
     try {
-      print('DEBUG: Initializing camera controller...');
       await _controller!.initialize();
-      print('DEBUG: Camera controller initialized successfully');
 
       if (mounted) {
         setState(() {
           _isCameraInitialized = true;
           _statusMessage = 'Position your face in the frame';
         });
-        print('DEBUG: Starting face detection');
         _startFaceDetection();
       }
     } catch (e) {
-      print('DEBUG: Error setting up camera: $e');
       setState(() {
         _statusMessage = 'Error setting up camera: $e';
       });
@@ -400,7 +375,7 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
           if (_photoTaken)
             Positioned.fill(
               child: Container(
-                color: Colors.green.withOpacity(0.8),
+                color: Colors.green.withValues(alpha: 0.8),
                 child: const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,

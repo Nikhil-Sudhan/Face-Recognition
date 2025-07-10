@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 import 'homepage.dart';
 
 class LoginPage extends StatefulWidget {
@@ -9,7 +10,7 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final TextEditingController _employeeIdController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
@@ -20,30 +21,35 @@ class _LoginPageState extends State<LoginPage> {
         _isLoading = true;
       });
 
-      // Hardcoded credentials for testing
-      String employeeId = _employeeIdController.text;
+      String email = _emailController.text;
       String password = _passwordController.text;
 
-      // Simulate API delay
-      await Future.delayed(const Duration(seconds: 1));
+      // Use AuthService for login
+      final result = await AuthService.login(email, password);
 
       setState(() {
         _isLoading = false;
       });
 
-      // Check hardcoded credentials
-      if (employeeId == 'admin' && password == 'admin') {
+      if (result['success']) {
         // Navigate to homepage on successful login
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const HomePage()),
         );
-      } else {
-        // Show error message for wrong credentials
+        
+        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Invalid credentials! Use username: admin, password: admin'),
+          SnackBar(
+            content: Text(result['message']),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message']),
             backgroundColor: Colors.red,
           ),
         );
@@ -115,15 +121,19 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 32),
                 TextFormField(
-                  controller: _employeeIdController,
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(
-                    labelText: 'Employee ID',
+                    labelText: 'Email',
                     border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.badge),
+                    prefixIcon: Icon(Icons.email),
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Please enter your Employee ID';
+                      return 'Please enter your email';
+                    }
+                    if (!value.contains('@')) {
+                      return 'Please enter a valid email';
                     }
                     return null;
                   },
@@ -174,7 +184,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    _employeeIdController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }

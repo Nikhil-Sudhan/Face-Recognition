@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'camera.dart';
 import 'settings.dart';
 import 'user_details.dart';
 import 'attendance_camera.dart';

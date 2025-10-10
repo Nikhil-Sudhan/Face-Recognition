@@ -1,57 +1,31 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 
 class AuthService {
-  static const String _baseUrl = 'https://demo.c9infotech.com/api/method';
-  static const String _loginEndpoint = '$_baseUrl/cmenu.api.hr_login';
-
-  // Login API call
+  // Simple local login: username = 'root', password = 'root'
   static Future<Map<String, dynamic>> login(
-      String email, String password) async {
+      String username, String password) async {
     try {
-      final response = await http.post(
-        Uri.parse(_loginEndpoint),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'email': email,
-          'password': password,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-
-        // Store login response in local storage
-        await _storeLoginData(response.body, email);
-
+      if (username.trim() == 'root' && password == 'root') {
+        await _storeLoginData(username);
         return {
           'success': true,
-          'data': responseData,
+          'data': {'user': username},
           'message': 'Login successful'
         };
-      } else {
-        return {
-          'success': false,
-          'message': 'Login failed: ${response.statusCode}',
-          'statusCode': response.statusCode
-        };
       }
+
+      return {'success': false, 'message': 'Invalid username or password'};
     } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
+      return {'success': false, 'message': 'Error: $e'};
     }
   }
 
   // Store login data in local storage
-  static Future<void> _storeLoginData(
-      String loginResponse, String email) async {
+  static Future<void> _storeLoginData(String username) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('login_response', loginResponse);
-      await prefs.setString('user_email', email);
+      await prefs.setString('user_name', username);
       await prefs.setBool('is_logged_in', true);
     } catch (e) {
       if (kDebugMode) {
@@ -64,14 +38,12 @@ class AuthService {
   static Future<Map<String, dynamic>?> getStoredLoginData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final loginResponse = prefs.getString('login_response');
-      final userEmail = prefs.getString('user_email');
+      final userName = prefs.getString('user_name');
       final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
 
-      if (loginResponse != null && userEmail != null && isLoggedIn) {
+      if (userName != null && isLoggedIn) {
         return {
-          'login_response': json.decode(loginResponse),
-          'user_email': userEmail,
+          'user_name': userName,
           'is_logged_in': isLoggedIn,
         };
       }
@@ -100,8 +72,7 @@ class AuthService {
   static Future<void> logout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('login_response');
-      await prefs.remove('user_email');
+      await prefs.remove('user_name');
       await prefs.setBool('is_logged_in', false);
     } catch (e) {
       if (kDebugMode) {

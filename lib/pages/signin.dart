@@ -37,7 +37,7 @@ class _LoginPageState extends State<LoginPage> {
           context,
           MaterialPageRoute(builder: (context) => const HomePage()),
         );
-        
+
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -64,7 +64,7 @@ class _LoginPageState extends State<LoginPage> {
         return AlertDialog(
           title: const Text('Help'),
           content: const Text(
-            'Enter your Employee ID and Password to sign in.\n\n'
+            'Use username "root" and password "root" to sign in for demo.\n\n'
             'If you forgot your credentials, please contact your administrator.',
           ),
           actions: [
@@ -122,18 +122,16 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 32),
                 TextFormField(
                   controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
+                  keyboardType: TextInputType.text,
                   decoration: const InputDecoration(
-                    labelText: 'Email',
+                    labelText: 'Username',
+                    hintText: 'root',
                     border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.email),
+                    prefixIcon: Icon(Icons.person),
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Please enter your email';
-                    }
-                    if (!value.contains('@')) {
-                      return 'Please enter a valid email';
+                      return 'Please enter your username';
                     }
                     return null;
                   },

@@ -375,7 +375,7 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
           if (_photoTaken)
             Positioned.fill(
               child: Container(
-                color: Colors.green.withValues(alpha: 0.8),
+                color: Colors.green.withOpacity(0.8),
                 child: const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,

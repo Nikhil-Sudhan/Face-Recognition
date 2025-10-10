@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/image_storage_service.dart';
 import '../services/database_service.dart';
+import '../services/auth_service.dart';
 import 'profile_selection.dart';
+import 'signin.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -562,10 +564,13 @@ class _SettingsPageState extends State<SettingsPage> {
                             child: const Text('Cancel'),
                           ),
                           TextButton(
-                            onPressed: () {
+                            onPressed: () async {
                               Navigator.of(context).pop();
-                              Navigator.of(context).pushNamedAndRemoveUntil(
-                                '/',
+                              await AuthService.logout();
+                              if (!context.mounted) return;
+                              Navigator.of(context).pushAndRemoveUntil(
+                                MaterialPageRoute(
+                                    builder: (_) => const LoginPage()),
                                 (route) => false,
                               );
                             },

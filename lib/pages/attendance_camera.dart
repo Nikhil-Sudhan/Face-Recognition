@@ -7,7 +7,6 @@ import 'dart:io';
 import '../services/face_recognition_service.dart';
 import '../services/database_service.dart';
 import '../models/employee.dart';
-import '../models/attendance.dart';
 
 class AttendanceCameraPage extends StatefulWidget {
   const AttendanceCameraPage({super.key});
@@ -264,22 +263,14 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
 
   Future<void> _markAttendance(Employee employee, double confidence) async {
     try {
-      final now = DateTime.now();
-      final attendance = Attendance(
-        empId: employee.empId,
-        employeeName: employee.name,
-        date: DateTime(now.year, now.month, now.day),
-        checkInTime: now,
-        status: 'Present',
-      );
-
-      await DatabaseService.insertAttendance(attendance);
+      final result = await DatabaseService.markAttendance(employee.empId);
 
       setState(() {
-        _attendanceMarked = true;
+        _attendanceMarked = result['success'] == true;
         _recognizedEmployee = employee;
         _recognitionConfidence = confidence;
-        _statusMessage = 'Attendance marked successfully!';
+        _statusMessage =
+            (result['message'] as String?) ?? 'Attendance marked successfully!';
       });
 
       // Stop detection timer
@@ -437,7 +428,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
           if (_attendanceMarked && _recognizedEmployee != null)
             Positioned.fill(
               child: Container(
-                color: Colors.green.withValues(alpha: 0.9),
+                color: Colors.green.withOpacity(0.9),
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -517,7 +508,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.9),
+                  color: Colors.red.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(

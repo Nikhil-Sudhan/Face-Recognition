@@ -6,7 +6,8 @@ import 'package:camera/camera.dart';
 
 class FaceRecognitionService {
   static bool _isInitialized = false;
-  static const double _threshold = 0.4; // Lowered threshold for better matching
+  static const double _threshold =
+      0.35; // Slightly lower threshold for demo reliability
   static const int _embeddingSize =
       128; // Increased embedding size for better accuracy
 
@@ -23,38 +24,7 @@ class FaceRecognitionService {
     }
   }
 
-  // Extract face from image using ML Kit face detection
-  static Future<List<Face>> _detectFaces(Uint8List imageBytes) async {
-    final inputImage = InputImage.fromBytes(
-      bytes: imageBytes,
-      metadata: InputImageMetadata(
-        size: Size(480, 640),
-        rotation: InputImageRotation.rotation0deg,
-        format: InputImageFormat.nv21,
-        bytesPerRow: 480,
-      ),
-    );
-
-    final faceDetector = FaceDetector(
-      options: FaceDetectorOptions(
-        enableContours: false,
-        enableLandmarks: true, // Enable landmarks for better validation
-        enableClassification: false,
-        enableTracking: false,
-        minFaceSize: 0.15, // Increased minimum face size
-        performanceMode: FaceDetectorMode.accurate,
-      ),
-    );
-
-    try {
-      final faces = await faceDetector.processImage(inputImage);
-      await faceDetector.close();
-      return faces;
-    } catch (e) {
-      await faceDetector.close();
-      throw Exception('Face detection failed: $e');
-    }
-  }
+  // (unused helper removed)
 
   // Generate improved face features
   static List<double> _generateFaceFeatures(img.Image faceImage) {

@@ -249,7 +249,7 @@ class _AddEditEmployeePageState extends State<AddEditEmployeePage> {
 
       if (result['success'] == true) {
         final embedding = result['embedding'] as List<double>;
-        final quality = result['faceQuality'] as double;
+        final quality = (result['quality'] as num).toDouble();
 
         setState(() {
           _faceEmbedding = embedding;

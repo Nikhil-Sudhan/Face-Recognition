@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'pages/signin.dart';
 import 'services/auth_service.dart';
-import 'pages/homepage.dart';
+// import 'pages/homepage.dart';
+import 'screens/kiosk_attendance_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -27,7 +28,9 @@ class MyApp extends StatelessWidget {
               body: Center(child: CircularProgressIndicator()),
             );
           }
-          return snapshot.data == true ? const HomePage() : const LoginPage();
+          return snapshot.data == true
+              ? const KioskAttendanceScreen()
+              : const LoginPage();
         },
       ),
     );

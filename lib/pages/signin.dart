@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/api_client.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'homepage.dart';
 
 class LoginPage extends StatefulWidget {
@@ -10,10 +13,15 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _apiController =
+      TextEditingController(text: 'https://demo.hshrsolutions.com');
+  final TextEditingController _usernameController =
+      TextEditingController(text: 'thomas550i@gmail.com');
+  final TextEditingController _passwordController =
+      TextEditingController(text: 'Password.123');
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
+  bool _allowSelfSigned = false;
 
   void _signIn() async {
     if (_formKey.currentState!.validate()) {
@@ -21,35 +29,71 @@ class _LoginPageState extends State<LoginPage> {
         _isLoading = true;
       });
 
-      String email = _emailController.text;
-      String password = _passwordController.text;
+      final api = _apiController.text.trim();
+      final key = _usernameController.text.trim();
+      final secret = _passwordController.text;
 
-      // Use AuthService for login
-      final result = await AuthService.login(email, password);
+      // Save base URL and perform session login (email/password)
+      try {
+        ApiClient.setAllowSelfSigned(_allowSelfSigned);
+        await ApiClient.setCredentials(baseUrl: api, apiKey: '', apiSecret: '');
+        final resp = await ApiClient.sessionLogin(email: key, password: secret);
+        if (resp.statusCode != 200) {
+          throw Exception('Login failed: ${resp.statusMessage}');
+        }
+        // store login state
+        final result = await AuthService.login(key, 'session');
 
-      setState(() {
-        _isLoading = false;
-      });
+        setState(() {
+          _isLoading = false;
+        });
 
-      if (result['success']) {
-        // Navigate to homepage on successful login
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const HomePage()),
-        );
+        if (result['success']) {
+          // Navigate to homepage on successful login
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomePage()),
+          );
 
-        // Show success message
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message']),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message']),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } catch (e) {
+        setState(() {
+          _isLoading = false;
+        });
+        String message = 'Login failed: $e';
+        if (e is DioException) {
+          final type = e.type;
+          if (kIsWeb && type == DioExceptionType.unknown) {
+            message =
+                'Network error in browser (likely CORS). Please enable CORS on the API server or run the app on desktop/mobile for testing.';
+          } else if (type == DioExceptionType.connectionTimeout ||
+              type == DioExceptionType.receiveTimeout) {
+            message = 'Connection timed out. Check API URL and connectivity.';
+          } else if (type == DioExceptionType.badResponse) {
+            message =
+                'Server error ${e.response?.statusCode}: ${e.response?.statusMessage}';
+          } else if (type == DioExceptionType.connectionError) {
+            message = 'Connection error. Verify internet and API URL.';
+          }
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['message']),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message']),
+            content: Text(message),
             backgroundColor: Colors.red,
           ),
         );
@@ -121,17 +165,33 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 32),
                 TextFormField(
-                  controller: _emailController,
+                  controller: _apiController,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    labelText: 'API Base URL',
+                    hintText: 'https://demo.hshrsolutions.com',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.link),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter API URL';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _usernameController,
                   keyboardType: TextInputType.text,
                   decoration: const InputDecoration(
-                    labelText: 'Username',
-                    hintText: 'root',
+                    labelText: 'User Name (Email)',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.person),
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Please enter your username';
+                      return 'Please enter username/email';
                     }
                     return null;
                   },
@@ -147,12 +207,22 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Please enter your password';
+                      return 'Please enter password';
                     }
                     return null;
                   },
                 ),
                 const SizedBox(height: 24),
+                CheckboxListTile(
+                  value: _allowSelfSigned,
+                  onChanged: (v) =>
+                      setState(() => _allowSelfSigned = v ?? false),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('Allow self-signed/invalid SSL (dev only)'),
+                  subtitle: const Text(
+                      'Enable if you see CERTIFICATE_VERIFY_FAILED on desktop/mobile'),
+                ),
+                const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
                   height: 48,
@@ -182,7 +252,8 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _apiController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }

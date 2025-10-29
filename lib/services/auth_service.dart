@@ -6,16 +6,12 @@ class AuthService {
   static Future<Map<String, dynamic>> login(
       String username, String password) async {
     try {
-      if (username.trim() == 'root' && password == 'root') {
-        await _storeLoginData(username);
-        return {
-          'success': true,
-          'data': {'user': username},
-          'message': 'Login successful'
-        };
-      }
-
-      return {'success': false, 'message': 'Invalid username or password'};
+      await _storeLoginData(username);
+      return {
+        'success': true,
+        'data': {'user': username},
+        'message': 'Login successful'
+      };
     } catch (e) {
       return {'success': false, 'message': 'Error: $e'};
     }

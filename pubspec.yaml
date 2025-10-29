@@ -52,6 +52,12 @@ dependencies:
   
   # Face detection using Google ML Kit
   google_mlkit_face_detection: ^0.10.0
+  
+  # HTTP client with interceptors and robust features
+  dio: ^5.7.0
+  
+  # Secure storage for API URL, key and secret
+  flutter_secure_storage: ^9.2.2
 
 dev_dependencies:
   flutter_test:

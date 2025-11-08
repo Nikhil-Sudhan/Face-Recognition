@@ -5,6 +5,7 @@ import '../models/employee.dart';
 import '../services/database_service.dart';
 import '../services/image_storage_service.dart';
 import '../services/face_recognition_service.dart';
+import '../services/erpnext_sync_service.dart';
 import 'face_detection_camera.dart';
 
 class AddEditEmployeePage extends StatefulWidget {
@@ -128,6 +129,44 @@ class _AddEditEmployeePageState extends State<AddEditEmployeePage> {
         // Update existing employee
         await DatabaseService.updateEmployee(employee);
         _showSnackBar('Employee updated successfully!', Colors.green);
+      }
+
+      // Upload face data to ERPNext if available
+      if (employee.email != null && 
+          employee.email!.isNotEmpty && 
+          employee.faceData != null && 
+          employee.faceData!.isNotEmpty) {
+        try {
+          print('=== Triggering face data upload ===');
+          print('Employee email: ${employee.email}');
+          print('Employee ERPNext ID: ${employee.erpNextId}');
+          print('Face data length: ${employee.faceData!.length}');
+          
+          final result = await ErpNextSyncService.uploadFaceData(
+            email: employee.email!, 
+            faceData: employee.faceData!,
+            erpNextId: employee.erpNextId, // Pass ERPNext ID to skip search
+          );
+          
+          print('Upload result: $result');
+          
+          if (result['success']) {
+            print('✓ Face data uploaded to server successfully');
+          } else {
+            print('✗ Face data upload failed: ${result['message']}');
+            if (result['error'] != null) {
+              print('Error details: ${result['error']}');
+            }
+            // Don't show error to user, upload can be retried on next sync
+          }
+        } catch (e) {
+          print('✗ Exception during face data upload: $e');
+          // Silent fail - face data is already saved locally
+        }
+      } else {
+        print('Skipping face data upload:');
+        print('  - Has email: ${employee.email != null && employee.email!.isNotEmpty}');
+        print('  - Has face data: ${employee.faceData != null && employee.faceData!.isNotEmpty}');
       }
 
       Navigator.pop(context, true);

@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'dart:io';
 import '../services/face_recognition_service.dart';
 import '../services/database_service.dart';
+import '../services/api_client.dart';
+import '../services/liveness_detection_service.dart';
 import '../models/employee.dart';
 
 class AttendanceCameraPage extends StatefulWidget {
@@ -22,6 +25,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
   bool _faceDetected = false;
   bool _isRecognizing = false;
   bool _attendanceMarked = false;
+  bool _thresholdWarning = false; // Flag for threshold warning display
   List<CameraDescription> _cameras = [];
   int _selectedCameraIndex = 0;
 
@@ -129,16 +133,25 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
   }
 
   void _startFaceDetection() {
+    // Cancel existing timer if any
+    _detectionTimer?.cancel();
+    
     _detectionTimer =
         Timer.periodic(const Duration(milliseconds: 1000), (timer) {
-      if (_isCameraInitialized && !_isDetecting && !_attendanceMarked) {
+      // Check if widget is still mounted before proceeding
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      if (_isCameraInitialized && !_isDetecting && !_attendanceMarked && !_thresholdWarning) {
         _detectAndRecognizeFace();
       }
     });
   }
 
   Future<void> _detectAndRecognizeFace() async {
-    if (_isDetecting || !_isCameraInitialized || _attendanceMarked) return;
+    if (_isDetecting || !_isCameraInitialized || _attendanceMarked || !mounted) return;
 
     setState(() {
       _isDetecting = true;
@@ -151,40 +164,95 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
       final inputImage = InputImage.fromFilePath(imageFile.path);
       final faces = await _faceDetector.processImage(inputImage);
 
+      if (!mounted) return; // Check again after async operation
+
       if (faces.isNotEmpty && !_attendanceMarked) {
-        setState(() {
-          _faceDetected = true;
-          _statusMessage = 'Face detected! Recognizing...';
-          _isRecognizing = true;
-        });
+        // Check if liveness detection is enabled
+        final prefs = await SharedPreferences.getInstance();
+        final livenessEnabled = prefs.getBool('liveness_detection_enabled') ?? true;
+
+        if (livenessEnabled) {
+          // Perform liveness detection
+          final livenessResult = await LivenessDetectionService.detectLiveness(
+            imageFile.path,
+            faces.first,
+          );
+
+          if (!mounted) return;
+
+          print('Liveness detection result: ${livenessResult['isLive']}');
+          print('Liveness confidence: ${livenessResult['confidence']}');
+
+          if (livenessResult['isLive'] != true) {
+            // Fake face detected!
+            setState(() {
+              _faceDetected = false;
+              _statusMessage = '⚠️ Fake detected: ${livenessResult['reason']}';
+            });
+
+            // Show warning for 3 seconds
+            Timer(const Duration(seconds: 3), () {
+              if (mounted && !_attendanceMarked) {
+                setState(() {
+                  _statusMessage = 'Position your face in the frame';
+                });
+              }
+            });
+
+            await File(imageFile.path).delete();
+            return;
+          }
+
+          // Real face detected, proceed with recognition
+          setState(() {
+            _faceDetected = true;
+            _statusMessage = 'Live face detected! Recognizing...';
+          });
+        } else {
+          // Liveness detection disabled, just show face detected
+          setState(() {
+            _faceDetected = true;
+            _statusMessage = 'Face detected! Recognizing...';
+          });
+        }
 
         await _recognizeFace(imageFile);
       } else {
-        setState(() {
-          _faceDetected = false;
-          _statusMessage = 'Position your face in the frame';
-        });
+        if (mounted) {
+          setState(() {
+            _faceDetected = false;
+            _statusMessage = 'Position your face in the frame';
+          });
+        }
       }
 
       // Clean up the detection image
       await File(imageFile.path).delete();
     } catch (e) {
       print('Error in face detection: $e');
-      setState(() {
-        _statusMessage = 'Error detecting face: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _statusMessage = 'Error detecting face: $e';
+        });
+      }
     } finally {
-      setState(() {
-        _isDetecting = false;
-        _isRecognizing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isDetecting = false;
+          _isRecognizing = false;
+        });
+      }
     }
   }
 
   Future<void> _recognizeFace(XFile imageFile) async {
+    if (!mounted) return;
+    
     try {
       // Process the image to get face embedding
       final result = await FaceRecognitionService.processCameraImage(imageFile);
+
+      if (!mounted) return; // Check after async operation
 
       if (result['success'] != true) {
         setState(() {
@@ -200,6 +268,8 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
       final employeesWithFaces = employees
           .where((emp) => emp.faceData != null && emp.faceData!.isNotEmpty)
           .toList();
+
+      if (!mounted) return; // Check after async operation
 
       if (employeesWithFaces.isEmpty) {
         setState(() {
@@ -239,11 +309,13 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
       } else {
         final confidence = recognitionResult['confidence'] as double;
 
-        setState(() {
-          _statusMessage =
-              'Face not identified (confidence: ${confidence.toStringAsFixed(3)})';
-          _recognitionConfidence = confidence;
-        });
+        if (mounted) {
+          setState(() {
+            _statusMessage =
+                'Face not identified (confidence: ${confidence.toStringAsFixed(3)})';
+            _recognitionConfidence = confidence;
+          });
+        }
 
         // Show not identified message for a few seconds
         Timer(const Duration(seconds: 3), () {
@@ -255,31 +327,112 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
         });
       }
     } catch (e) {
-      setState(() {
-        _statusMessage = 'Error recognizing face: $e';
-      });
+      print('Error recognizing face: $e');
+      if (mounted) {
+        setState(() {
+          _statusMessage = 'Error recognizing face: $e';
+        });
+      }
     }
   }
 
   Future<void> _markAttendance(Employee employee, double confidence) async {
     try {
-      final result = await DatabaseService.markAttendance(employee.empId);
+      print('=== Marking Attendance ===');
+      print('Employee ID: ${employee.empId}');
+      print('Employee Name: ${employee.name}');
+      print('ERPNext ID: ${employee.erpNextId}');
+      print('Confidence: $confidence');
+
+      // Get threshold from settings
+      final prefs = await SharedPreferences.getInstance();
+      final thresholdSeconds = prefs.getInt('attendance_threshold_seconds') ?? 30;
+      print('Threshold: $thresholdSeconds seconds');
+
+      // Mark attendance locally first with threshold check
+      final localResult = await DatabaseService.markAttendance(
+        employee.empId,
+        thresholdSeconds: thresholdSeconds,
+      );
+      print('Local attendance result: ${localResult['success']}');
+      print('Local attendance message: ${localResult['message']}');
+
+      // If threshold not met, show warning message and return
+      if (!localResult['success'] && localResult['type'] == 'threshold_not_met') {
+        setState(() {
+          _thresholdWarning = true;
+          _recognizedEmployee = employee;
+          _recognitionConfidence = confidence;
+          _statusMessage = localResult['message'];
+        });
+
+        // Wait 2 seconds to show the warning message, then reset for next employee
+        Timer(const Duration(seconds: 2), () {
+          if (mounted) {
+            setState(() {
+              _thresholdWarning = false;
+              _recognizedEmployee = null;
+              _recognitionConfidence = 0.0;
+              _statusMessage = 'Position your face in the frame';
+            });
+            // Resume detection for next employee
+            _startFaceDetection();
+          }
+        });
+        return;
+      }
+
+      // If employee has ERPNext ID, post to ERPNext Employee Checkin
+      if (employee.erpNextId != null && employee.erpNextId!.isNotEmpty) {
+        try {
+          print('Posting to ERPNext Employee Checkin...');
+          final now = DateTime.now().toIso8601String();
+          
+          final checkinResp = await ApiClient.post(
+            '/api/resource/Employee Checkin',
+            data: {
+              'employee': employee.erpNextId,
+              'time': now,
+              'device_id': 'MobileAPP',
+              // log_type will be auto-determined by ERPNext or left empty as per requirement
+            },
+          );
+
+          print('ERPNext checkin response status: ${checkinResp.statusCode}');
+          print('ERPNext checkin response data: ${checkinResp.data}');
+
+          if (checkinResp.statusCode == 200 || checkinResp.statusCode == 201) {
+            print('✓ Attendance posted to ERPNext successfully');
+          } else {
+            print('✗ ERPNext checkin failed with status: ${checkinResp.statusCode}');
+          }
+        } catch (e) {
+          print('✗ Error posting to ERPNext: $e');
+          // Don't fail local attendance if ERPNext fails
+        }
+      } else {
+        print('Skipping ERPNext checkin - no ERPNext ID for employee');
+      }
 
       setState(() {
-        _attendanceMarked = result['success'] == true;
+        _attendanceMarked = localResult['success'] == true;
         _recognizedEmployee = employee;
         _recognitionConfidence = confidence;
         _statusMessage =
-            (result['message'] as String?) ?? 'Attendance marked successfully!';
+            (localResult['message'] as String?) ?? 'Attendance marked successfully!';
       });
 
-      // Stop detection timer
-      _detectionTimer?.cancel();
-
-      // Auto close after 3 seconds
-      Timer(const Duration(seconds: 3), () {
+      // Wait 2 seconds to show the success message, then reset for next employee
+      Timer(const Duration(seconds: 2), () {
         if (mounted) {
-          Navigator.pop(context);
+          setState(() {
+            _attendanceMarked = false;
+            _recognizedEmployee = null;
+            _recognitionConfidence = 0.0;
+            _statusMessage = 'Position your face in the frame';
+          });
+          // Resume detection for next employee
+          _startFaceDetection();
         }
       });
     } catch (e) {
@@ -415,7 +568,9 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
                         ? Colors.green
                         : _faceDetected
                             ? Colors.green
-                            : Colors.white,
+                            : _statusMessage.contains('Fake') || _statusMessage.contains('⚠️')
+                                ? Colors.red
+                                : Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),
@@ -486,8 +641,76 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
                             Text(
                               'Time: ${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}',
                               style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Threshold warning overlay (orange/warning color)
+          if (_thresholdWarning && _recognizedEmployee != null)
+            Positioned.fill(
+              child: Container(
+                color: Colors.orange.withOpacity(0.9),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        size: 80,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Already Marked!',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        margin: const EdgeInsets.symmetric(horizontal: 30),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              _recognizedEmployee!.name,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'ID: ${_recognizedEmployee!.empId}',
+                              style: const TextStyle(
                                 fontSize: 16,
                                 color: Colors.black54,
+                              ),
+                            ),
+                            const SizedBox(height: 15),
+                            Text(
+                              _statusMessage,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Colors.orange,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
@@ -547,9 +770,17 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
 
   @override
   void dispose() {
+    // Cancel all timers
     _detectionTimer?.cancel();
+    _detectionTimer = null;
+    
+    // Stop and dispose camera
     _controller?.dispose();
+    _controller = null;
+    
+    // Close face detector
     _faceDetector.close();
+    
     super.dispose();
   }
 }

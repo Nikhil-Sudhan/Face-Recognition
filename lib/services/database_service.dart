@@ -6,7 +6,7 @@ import '../models/attendance.dart';
 class DatabaseService {
   static Database? _database;
   static const String _databaseName = 'attendance.db';
-  static const int _databaseVersion = 1;
+  static const int _databaseVersion = 2; // Incremented for erpNextId field
 
   // Table names
   static const String _employeesTable = 'employees';
@@ -43,6 +43,7 @@ class DatabaseService {
         department TEXT,
         email TEXT,
         phone TEXT,
+        erpNextId TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
         faceData TEXT
@@ -72,8 +73,10 @@ class DatabaseService {
   static Future<void> _upgradeDatabase(
       Database db, int oldVersion, int newVersion) async {
     // Handle database upgrades here
-    if (oldVersion < newVersion) {
-      // Add migration logic if needed
+    if (oldVersion < 2 && newVersion >= 2) {
+      // Add erpNextId column to employees table
+      await db.execute('ALTER TABLE $_employeesTable ADD COLUMN erpNextId TEXT');
+      print('Database upgraded: Added erpNextId column');
     }
   }
 
@@ -108,6 +111,19 @@ class DatabaseService {
       _employeesTable,
       where: 'empId = ?',
       whereArgs: [empId],
+    );
+    if (maps.isNotEmpty) {
+      return Employee.fromMap(maps.first);
+    }
+    return null;
+  }
+
+  static Future<Employee?> getEmployeeByEmail(String email) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      _employeesTable,
+      where: 'email = ?',
+      whereArgs: [email],
     );
     if (maps.isNotEmpty) {
       return Employee.fromMap(maps.first);
@@ -194,63 +210,64 @@ class DatabaseService {
   }
 
   // Mark attendance for face recognition
-  static Future<Map<String, dynamic>> markAttendance(int empId) async {
+  static Future<Map<String, dynamic>> markAttendance(int empId, {int thresholdSeconds = 30}) async {
     try {
       final employee = await getEmployeeById(empId);
       if (employee == null) {
         return {'success': false, 'message': 'Employee not found'};
       }
 
-      final today = DateTime.now();
-      final existingAttendance = await getAttendanceByDate(today);
+      final now = DateTime.now();
 
-      // Check if already marked today
-      final todayAttendance =
-          existingAttendance.where((att) => att.empId == empId).toList();
-
-      if (todayAttendance.isNotEmpty) {
-        final lastAttendance = todayAttendance.first;
-
-        // If no check-out time, this is a check-out
-        if (lastAttendance.checkOutTime == null) {
-          final updatedAttendance = lastAttendance.copyWith(
-            checkOutTime: DateTime.now(),
-          );
-
-          await updateAttendance(updatedAttendance);
-          return {
-            'success': true,
-            'message': 'Check-out recorded successfully',
-            'type': 'checkout'
-          };
-        } else {
-          // Already checked out today, don't allow more entries
-          return {
-            'success': false,
-            'message': 'Attendance already completed for today',
-            'type': 'already_complete'
-          };
-        }
+      // Check if employee marked attendance recently (within threshold)
+      final recentAttendance = await getRecentAttendance(empId, thresholdSeconds);
+      if (recentAttendance != null) {
+        final timeSinceLastMark = now.difference(recentAttendance.checkInTime).inSeconds;
+        final remainingSeconds = thresholdSeconds - timeSinceLastMark;
+        return {
+          'success': false,
+          'message': 'Already marked! Please wait $remainingSeconds seconds',
+          'type': 'threshold_not_met'
+        };
       }
 
-      // No attendance today, create new check-in
+      // Create new attendance entry
       final attendance = Attendance(
         empId: empId,
         employeeName: employee.name,
-        checkInTime: DateTime.now(),
-        date: today,
+        checkInTime: now,
+        date: now,
       );
 
       await insertAttendance(attendance);
       return {
         'success': true,
-        'message': 'Check-in recorded successfully',
+        'message': 'Attendance recorded successfully',
         'type': 'checkin'
       };
     } catch (e) {
       print('Error marking attendance: $e');
       return {'success': false, 'message': 'Error marking attendance: $e'};
     }
+  }
+
+  // Get recent attendance within threshold
+  static Future<Attendance?> getRecentAttendance(int empId, int thresholdSeconds) async {
+    final db = await database;
+    final cutoffTime = DateTime.now().subtract(Duration(seconds: thresholdSeconds));
+    
+    final List<Map<String, dynamic>> maps = await db.query(
+      _attendanceTable,
+      where: 'empId = ? AND checkInTime >= ?',
+      whereArgs: [empId, cutoffTime.toIso8601String()],
+      orderBy: 'checkInTime DESC',
+      limit: 1,
+    );
+
+    if (maps.isNotEmpty) {
+      return Attendance.fromMap(maps.first);
+    }
+    return null;
   }
 
   // Get today's attendance for specific employee

@@ -6,6 +6,7 @@ class Employee {
   final String? department;
   final String? email;
   final String? phone;
+  final String? erpNextId; // ERPNext document name (e.g., "HR-EMP-00001")
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? faceData; // For storing face recognition data
@@ -18,6 +19,7 @@ class Employee {
     this.department,
     this.email,
     this.phone,
+    this.erpNextId,
     DateTime? createdAt,
     DateTime? updatedAt,
     this.faceData,
@@ -34,6 +36,7 @@ class Employee {
       'department': department,
       'email': email,
       'phone': phone,
+      'erpNextId': erpNextId,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'faceData': faceData,
@@ -50,6 +53,7 @@ class Employee {
       department: map['department'],
       email: map['email'],
       phone: map['phone'],
+      erpNextId: map['erpNextId'],
       createdAt:
           DateTime.parse(map['createdAt'] ?? DateTime.now().toIso8601String()),
       updatedAt:

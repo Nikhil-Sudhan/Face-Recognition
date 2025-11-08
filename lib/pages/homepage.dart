@@ -3,6 +3,7 @@ import 'settings.dart';
 import 'user_details.dart';
 import 'attendance_camera.dart';
 import '../services/database_service.dart';
+import '../services/erpnext_sync_service.dart';
 import '../models/attendance.dart';
 
 class HomePage extends StatefulWidget {
@@ -43,6 +44,74 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _syncEmployees() async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Expanded(child: Text('Syncing employees...')),
+            ],
+          ),
+        ),
+      );
+
+      final result = await ErpNextSyncService.syncEmployees();
+      Navigator.of(context).pop(); // Close loading dialog
+
+      // Show result dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            result['success'] ? 'Sync Complete' : 'Sync Failed',
+            style: TextStyle(
+              color: result['success'] ? Colors.green : Colors.red,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(result['message']),
+              if (result['success']) ...[
+                const SizedBox(height: 12),
+                Text('New employees: ${result['synced']}'),
+                Text('Updated employees: ${result['updated']}'),
+                if (result['errors'] > 0)
+                  Text(
+                    'Errors: ${result['errors']}',
+                    style: const TextStyle(color: Colors.orange),
+                  ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _loadAttendanceData(); // Refresh data
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      Navigator.of(context).pop(); // Close loading dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sync failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -60,6 +129,23 @@ class _HomePageState extends State<HomePage> {
         ),
         centerTitle: false,
         actions: [
+          IconButton(
+            onPressed: _syncEmployees,
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade200,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.sync,
+                color: Colors.black,
+                size: 20,
+              ),
+            ),
+            tooltip: 'Sync Employees',
+          ),
+          const SizedBox(width: 8),
           IconButton(
             onPressed: () {
               Navigator.push(

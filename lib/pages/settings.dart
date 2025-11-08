@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/image_storage_service.dart';
 import '../services/database_service.dart';
 import '../services/auth_service.dart';
@@ -17,11 +18,38 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _cameraPermissionGranted = false;
   bool _notificationsEnabled = true;
   bool _autoMarkAttendance = true;
+  int _attendanceThresholdSeconds = 30; // Default 30 seconds
+  bool _livenessDetectionEnabled = true; // Default enabled for security
 
   @override
   void initState() {
     super.initState();
     _checkCameraPermission();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _attendanceThresholdSeconds = prefs.getInt('attendance_threshold_seconds') ?? 30;
+      _livenessDetectionEnabled = prefs.getBool('liveness_detection_enabled') ?? true;
+    });
+  }
+
+  Future<void> _saveThreshold(int seconds) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('attendance_threshold_seconds', seconds);
+    setState(() {
+      _attendanceThresholdSeconds = seconds;
+    });
+  }
+
+  Future<void> _saveLivenessDetection(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('liveness_detection_enabled', enabled);
+    setState(() {
+      _livenessDetectionEnabled = enabled;
+    });
   }
 
   Future<void> _checkCameraPermission() async {
@@ -542,6 +570,116 @@ class _SettingsPageState extends State<SettingsPage> {
                     },
                   ),
                 ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Attendance Threshold Setting
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Attendance Settings',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Re-mark Threshold',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Minimum time before same employee can mark attendance again',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        SizedBox(
+                          width: 100,
+                          child: TextFormField(
+                            initialValue: _attendanceThresholdSeconds.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              suffix: Text('sec'),
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                            onChanged: (value) {
+                              final seconds = int.tryParse(value);
+                              if (seconds != null && seconds >= 0) {
+                                _saveThreshold(seconds);
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Liveness Detection Toggle
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.security, size: 18, color: Colors.orange),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Anti-Spoofing Detection',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Prevent fake attendance using photos or screens',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: _livenessDetectionEnabled,
+                          onChanged: (value) {
+                            _saveLivenessDetection(value);
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
 

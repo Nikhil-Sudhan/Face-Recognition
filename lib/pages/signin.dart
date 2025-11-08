@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/api_client.dart';
+import '../storage/secure_storage.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'homepage.dart';
 
 class LoginPage extends StatefulWidget {
@@ -13,8 +15,8 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final TextEditingController _apiController =
-      TextEditingController(text: 'https://demo.hshrsolutions.com');
+  final TextEditingController _clientCodeController =
+      TextEditingController(text: 'demo');
   final TextEditingController _usernameController =
       TextEditingController(text: 'thomas550i@gmail.com');
   final TextEditingController _passwordController =
@@ -22,6 +24,29 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   bool _allowSelfSigned = false;
+  
+  static const String _baseDomain = 'hshrsolutions.com';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedClientCode();
+  }
+
+  Future<void> _loadSavedClientCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedCode = prefs.getString('client_code');
+    if (savedCode != null && savedCode.isNotEmpty) {
+      setState(() {
+        _clientCodeController.text = savedCode;
+      });
+    }
+  }
+
+  Future<void> _saveClientCode(String clientCode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('client_code', clientCode);
+  }
 
   void _signIn() async {
     if (_formKey.currentState!.validate()) {
@@ -29,20 +54,60 @@ class _LoginPageState extends State<LoginPage> {
         _isLoading = true;
       });
 
-      final api = _apiController.text.trim();
-      final key = _usernameController.text.trim();
-      final secret = _passwordController.text;
+      final clientCode = _clientCodeController.text.trim();
+      final api = 'https://$clientCode.$_baseDomain';
+      final email = _usernameController.text.trim();
+      final password = _passwordController.text;
 
-      // Save base URL and perform session login (email/password)
       try {
         ApiClient.setAllowSelfSigned(_allowSelfSigned);
+        
+        // Set base URL first
         await ApiClient.setCredentials(baseUrl: api, apiKey: '', apiSecret: '');
-        final resp = await ApiClient.sessionLogin(email: key, password: secret);
+        
+        // Call custom HR login API
+        final resp = await ApiClient.post(
+          '/api/method/cmenu.api.hr_login',
+          data: {
+            'email': email,
+            'password': password,
+          },
+        );
+        
         if (resp.statusCode != 200) {
           throw Exception('Login failed: ${resp.statusMessage}');
         }
-        // store login state
-        final result = await AuthService.login(key, 'session');
+
+        // Extract user details from response
+        final userDetails = resp.data['message'];
+        if (userDetails == null) {
+          throw Exception('Invalid response from server');
+        }
+        
+        final apiKey = userDetails['api_key'];
+        final apiSecret = userDetails['api_secret'];
+        
+        if (apiKey == null || apiSecret == null || apiKey.isEmpty || apiSecret.isEmpty) {
+          throw Exception('API credentials not found in response');
+        }
+        
+        print('Login successful - API Key: $apiKey');
+        
+        // Store API credentials
+        await ApiClient.setCredentials(
+          baseUrl: api,
+          apiKey: apiKey,
+          apiSecret: apiSecret,
+        );
+        
+        // Save user credentials for re-authentication
+        await AppSecureStorage.saveUserCredentials(email: email, password: password);
+        
+        // Store login state
+        final result = await AuthService.login(email, apiKey);
+
+        // Save client code for future use
+        await _saveClientCode(clientCode);
 
         setState(() {
           _isLoading = false;
@@ -138,18 +203,11 @@ class _LoginPageState extends State<LoginPage> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minHeight: MediaQuery.of(context).size.height -
-                MediaQuery.of(context).padding.top -
-                kToolbarHeight -
-                48,
-          ),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
                 const Icon(
                   Icons.person,
                   size: 80,
@@ -165,17 +223,21 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 32),
                 TextFormField(
-                  controller: _apiController,
-                  keyboardType: TextInputType.url,
+                  controller: _clientCodeController,
+                  keyboardType: TextInputType.text,
                   decoration: const InputDecoration(
-                    labelText: 'API Base URL',
-                    hintText: 'https://demo.hshrsolutions.com',
+                    labelText: 'Client Code (Subdomain)',
+                    hintText: 'demo',
+                    helperText: 'Will form: https://[code].hshrsolutions.com',
                     border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.link),
+                    prefixIcon: Icon(Icons.domain),
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Please enter API URL';
+                      return 'Please enter client code';
+                    }
+                    if (!RegExp(r'^[a-zA-Z0-9-]+$').hasMatch(value)) {
+                      return 'Only letters, numbers, and hyphens allowed';
                     }
                     return null;
                   },
@@ -246,13 +308,12 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   @override
   void dispose() {
-    _apiController.dispose();
+    _clientCodeController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();

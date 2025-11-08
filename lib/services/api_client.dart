@@ -12,7 +12,6 @@ class ApiClient {
   static String? _apiKey;
   static String? _apiSecret;
   static bool _allowSelfSigned = false;
-  static String? _sessionCookie; // e.g., 'sid=...'
 
   static Future<Dio> _getDio() async {
     if (_dio != null) return _dio!;
@@ -28,11 +27,13 @@ class ApiClient {
     final headers = <String, String>{
       'Content-Type': 'application/json',
     };
-    if ((_apiKey ?? '').isNotEmpty) {
-      headers['Authorization'] = 'token ${_apiKey!}:${_apiSecret!}';
-    }
-    if (_sessionCookie != null && _sessionCookie!.isNotEmpty) {
-      headers['Cookie'] = _sessionCookie!;
+    
+    // Add token authorization header if API key/secret available
+    if ((_apiKey ?? '').isNotEmpty && (_apiSecret ?? '').isNotEmpty) {
+      headers['Authorization'] = 'token $_apiKey:$_apiSecret';
+      print('Using token auth: token $_apiKey:***');
+    } else {
+      print('Warning: No API credentials available');
     }
 
     final dio = Dio(BaseOptions(
@@ -83,36 +84,6 @@ class ApiClient {
     _dio = null; // rebuild with new adapter settings next call
   }
 
-  // Session login using email/password; stores cookies in Dio.
-  static Future<Response> sessionLogin({
-    required String email,
-    required String password,
-  }) async {
-    final dio = await _getDio();
-    final resp = await dio.post(
-      '/api/method/login',
-      data: {
-        'usr': email,
-        'pwd': password,
-      },
-      options: Options(contentType: Headers.formUrlEncodedContentType),
-    );
-    // Extract sid from Set-Cookie
-    final setCookies = resp.headers.map['set-cookie'] ?? resp.headers.map['Set-Cookie'];
-    if (setCookies != null && setCookies.isNotEmpty) {
-      final header = setCookies.join(',');
-      final match = RegExp(r'(^|;)\s*sid=([^;]+)').firstMatch(header);
-      if (match != null) {
-        final sid = match.group(2);
-        if (sid != null && sid.isNotEmpty) {
-          _sessionCookie = 'sid=$sid';
-          _dio = null; // rebuild with cookie header next call
-        }
-      }
-    }
-    return resp;
-  }
-
   static Future<bool> verify() async {
     final dio = await _getDio();
     try {
@@ -144,6 +115,13 @@ class ApiClient {
     final dio = await _getDio();
     return dio.post(path, data: data);
   }
-}
 
+  static Future<Response<dynamic>> put(
+    String path, {
+    required Map<String, dynamic> data,
+  }) async {
+    final dio = await _getDio();
+    return dio.put(path, data: data);
+  }
+}
 

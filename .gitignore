@@ -43,3 +43,33 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Platform-specific folders (auto-generated, should not be committed)
+# Uncomment the platforms you want to ignore
+# Only commit these if you have custom native code modifications
+
+# Android
+android/
+!android/app/src/main/AndroidManifest.xml
+!android/app/build.gradle
+!android/build.gradle
+!android/gradle.properties
+!android/settings.gradle
+
+# iOS
+ios/
+!ios/Runner/Info.plist
+!ios/Runner/AppDelegate.swift
+!ios/Runner.xcodeproj/project.pbxproj
+
+# Web
+web/
+
+# Windows
+windows/
+
+# macOS
+macos/
+
+# Linux
+linux/

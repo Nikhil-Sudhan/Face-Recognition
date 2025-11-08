@@ -189,27 +189,65 @@ class _HomePageState extends State<HomePage> {
       ),
       body: Column(
         children: [
-          // Date section
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          // Date Selection Section
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.all(12.0),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
             child: Row(
               children: [
                 const Text(
-                  'LOG',
+                  'ATTENDANCE LOG',
                   style: TextStyle(
-                    fontSize: 18,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const Spacer(),
-                GestureDetector(
+                // Previous Day Button
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      selectedDate = selectedDate.subtract(const Duration(days: 1));
+                    });
+                    _loadAttendanceData();
+                  },
+                  icon: const Icon(Icons.chevron_left),
+                  tooltip: 'Previous Day',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 8),
+                // Date Display with Calendar Icon
+                InkWell(
                   onTap: () async {
                     final DateTime? picked = await showDatePicker(
                       context: context,
                       initialDate: selectedDate,
                       firstDate: DateTime(2020),
-                      lastDate: DateTime(2030),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      builder: (context, child) {
+                        return Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: ColorScheme.light(
+                              primary: Colors.blue.shade700,
+                              onPrimary: Colors.white,
+                              onSurface: Colors.black,
+                            ),
+                          ),
+                          child: child!,
+                        );
+                      },
                     );
                     if (picked != null && picked != selectedDate) {
                       setState(() {
@@ -218,14 +256,66 @@ class _HomePageState extends State<HomePage> {
                       _loadAttendanceData();
                     }
                   },
-                  child: Text(
-                    'Date: ${_formatDate(selectedDate)}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.calendar_today, size: 16, color: Colors.blue.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          _formatDate(selectedDate),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+                const SizedBox(width: 8),
+                // Next Day Button
+                IconButton(
+                  onPressed: selectedDate.isBefore(DateTime.now().subtract(const Duration(days: -1)))
+                      ? null
+                      : () {
+                          setState(() {
+                            selectedDate = selectedDate.add(const Duration(days: 1));
+                          });
+                          _loadAttendanceData();
+                        },
+                  icon: const Icon(Icons.chevron_right),
+                  tooltip: 'Next Day',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 8),
+                // Today Button
+                if (!_isToday(selectedDate))
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        selectedDate = DateTime.now();
+                      });
+                      _loadAttendanceData();
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      'Today',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -387,6 +477,13 @@ class _HomePageState extends State<HomePage> {
       'December'
     ];
     return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
   }
 
   void _openCamera() {

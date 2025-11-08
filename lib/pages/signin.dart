@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/api_client.dart';
+import '../services/mpin_service.dart';
 import '../storage/secure_storage.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'homepage.dart';
+import 'mpin_setup_page.dart';
+import 'attendance_camera.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -114,10 +117,36 @@ class _LoginPageState extends State<LoginPage> {
         });
 
         if (result['success']) {
-          // Navigate to homepage on successful login
+          // Check if MPIN is set
+          final mpinSet = await MpinService.isMpinSet();
+
+          if (!mpinSet) {
+            // First time login - set up MPIN
+            if (!mounted) return;
+            final mpinSetupResult = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const MpinSetupPage(),
+              ),
+            );
+
+            if (mpinSetupResult != true) {
+              // User cancelled MPIN setup
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('MPIN setup is required'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+              return;
+            }
+          }
+
+          // Navigate directly to camera for attendance
+          if (!mounted) return;
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => const HomePage()),
+            MaterialPageRoute(builder: (context) => const AttendanceCameraPage()),
           );
 
           // Show success message

@@ -43,12 +43,18 @@ dependencies:
   # HTTP client for API calls
   http: ^1.1.0
   
+  # Cryptography for MPIN hashing
+  crypto: ^3.0.3
+  
   # Local storage
   shared_preferences: ^2.2.2
   
   # Image processing and manipulation
   image: ^4.1.7
   image_picker: ^1.0.7
+  
+  # TensorFlow Lite for face recognition
+  tflite_flutter: ^0.11.0
   
   # Face detection using Google ML Kit
   google_mlkit_face_detection: ^0.10.0

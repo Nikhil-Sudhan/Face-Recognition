@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'pages/signin.dart';
-import 'pages/homepage.dart';
+import 'pages/attendance_camera.dart';
 import 'services/auth_service.dart';
 
 void main() {
@@ -27,8 +27,9 @@ class MyApp extends StatelessWidget {
               body: Center(child: CircularProgressIndicator()),
             );
           }
+          // Always route to Camera if logged in, MPIN required only for accessing main menu
           return snapshot.data == true
-              ? const HomePage()
+              ? const AttendanceCameraPage()
               : const LoginPage();
         },
       ),

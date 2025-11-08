@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/database_service.dart';
 import '../models/employee.dart';
 import 'add_edit_employee.dart';
@@ -17,11 +18,21 @@ class _UserDetailsPageState extends State<UserDetailsPage> {
   bool _isLoading = true;
   bool _isSelectionMode = false;
   Set<int> _selectedEmployeeIds = {};
+  String _companyName = 'Loading...';
 
   @override
   void initState() {
     super.initState();
+    _loadCompanyName();
     _loadEmployees();
+  }
+
+  Future<void> _loadCompanyName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final clientCode = prefs.getString('client_code') ?? 'demo';
+    setState(() {
+      _companyName = clientCode.toUpperCase();
+    });
   }
 
   Future<void> _loadEmployees() async {
@@ -194,18 +205,18 @@ class _UserDetailsPageState extends State<UserDetailsPage> {
                   color: Colors.black,
                 ),
               )
-            : const Column(
+            : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Balavigna Weaving Mills Pvt.Ltd.,',
-                    style: TextStyle(
+                    _companyName,
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                       color: Colors.black,
                     ),
                   ),
-                  Text(
+                  const Text(
                     'User Details',
                     style: TextStyle(
                       fontSize: 14,

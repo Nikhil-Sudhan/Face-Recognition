@@ -9,7 +9,10 @@ import '../services/face_recognition_service.dart';
 import '../services/database_service.dart';
 import '../services/api_client.dart';
 import '../services/liveness_detection_service.dart';
+import '../services/mpin_service.dart';
 import '../models/employee.dart';
+import 'mpin_verification_page.dart';
+import 'homepage.dart';
 
 class AttendanceCameraPage extends StatefulWidget {
   const AttendanceCameraPage({super.key});
@@ -451,23 +454,68 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text(
-          'Attendance Recognition',
-          style: TextStyle(color: Colors.white),
-        ),
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(
-            Icons.arrow_back,
-            color: Colors.white,
+    return WillPopScope(
+      onWillPop: () async {
+        // Require MPIN verification before going back
+        final verified = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const MpinVerificationPage(
+              title: 'Verify MPIN',
+              subtitle: 'Enter MPIN to access main menu',
+            ),
           ),
-        ),
-        actions: [
+        );
+
+        if (verified == true) {
+          // MPIN verified, navigate to homepage
+          if (!mounted) return false;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomePage()),
+          );
+          return false; // Prevent default back
+        }
+        
+        // MPIN not verified, stay on camera page
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: const Text(
+            'Attendance Recognition',
+            style: TextStyle(color: Colors.white),
+          ),
+          leading: IconButton(
+            onPressed: () async {
+              // Require MPIN verification before going back
+              final verified = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const MpinVerificationPage(
+                    title: 'Verify MPIN',
+                    subtitle: 'Enter MPIN to access main menu',
+                  ),
+                ),
+              );
+
+              if (verified == true && mounted) {
+                // MPIN verified, navigate to homepage
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const HomePage()),
+                );
+              }
+            },
+            icon: const Icon(
+              Icons.menu,
+              color: Colors.white,
+            ),
+          ),
+          actions: [
           if (_cameras.length > 1)
             IconButton(
               onPressed:
@@ -764,6 +812,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
               ),
             ),
         ],
+      ),
       ),
     );
   }

@@ -3,11 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:camera/camera.dart';
+import 'facenet_service.dart';
 
 class FaceRecognitionService {
   static bool _isInitialized = false;
   static const double _threshold =
-      0.35; // Slightly lower threshold for demo reliability
+      0.55; // INCREASED from 0.35 to 0.55 for stricter matching (reduces false positives)
   static const int _embeddingSize =
       128; // Increased embedding size for better accuracy
 
@@ -16,6 +17,16 @@ class FaceRecognitionService {
     if (_isInitialized) return true;
 
     try {
+      // Try to initialize FaceNet model
+      print('Attempting to initialize FaceNet model...');
+      final faceNetInitialized = await FaceNetService.initialize();
+      
+      if (faceNetInitialized) {
+        print('✓ FaceNet model loaded successfully - using deep learning recognition');
+      } else {
+        print('⚠ FaceNet model not available - using fallback feature extraction');
+      }
+      
       _isInitialized = true;
       return true;
     } catch (e) {
@@ -260,8 +271,24 @@ class FaceRecognitionService {
       final faceImage =
           img.copyCrop(image, x: x, y: y, width: width, height: height);
 
-      // Generate face embedding
-      final embedding = _generateFaceFeatures(faceImage);
+      // Generate face embedding - use FaceNet if available, otherwise fallback
+      List<double> embedding;
+      
+      if (FaceNetService.isModelAvailable()) {
+        print('Using FaceNet deep learning model for embedding...');
+        final faceNetEmbedding = await FaceNetService.generateEmbedding(faceImage);
+        
+        if (faceNetEmbedding != null) {
+          embedding = faceNetEmbedding;
+          print('✓ FaceNet embedding generated (${embedding.length} dimensions)');
+        } else {
+          print('⚠ FaceNet failed, using fallback features');
+          embedding = _generateFaceFeatures(faceImage);
+        }
+      } else {
+        print('⚠ FaceNet not available, using fallback features');
+        embedding = _generateFaceFeatures(faceImage);
+      }
 
       // Calculate quality score based on face size and image quality
       final quality = min(1.0, faceRatio * 8); // Improved quality calculation
@@ -366,8 +393,17 @@ class FaceRecognitionService {
     String? bestMatchId;
     final List<Map<String, dynamic>> allMatches = [];
 
+    // Use FaceNet similarity calculation if available, otherwise use fallback
     for (final entry in storedEmbeddings.entries) {
-      final similarity = compareEmbeddings(queryEmbedding, entry.value);
+      final double similarity;
+      
+      if (FaceNetService.isModelAvailable()) {
+        // Use cosine similarity for FaceNet embeddings
+        similarity = FaceNetService.calculateSimilarity(queryEmbedding, entry.value);
+      } else {
+        // Use fallback comparison
+        similarity = compareEmbeddings(queryEmbedding, entry.value);
+      }
 
       allMatches.add({
         'employeeId': entry.key,
@@ -383,7 +419,11 @@ class FaceRecognitionService {
     // Sort matches by similarity for debugging
     allMatches.sort((a, b) => b['similarity'].compareTo(a['similarity']));
 
-    final isMatch = bestSimilarity >= _threshold;
+    // Use different threshold for FaceNet vs fallback
+    final threshold = FaceNetService.isModelAvailable() ? 0.5 : _threshold;
+    final isMatch = bestSimilarity >= threshold;
+    
+    print('Best match: $bestMatchId, similarity: ${bestSimilarity.toStringAsFixed(4)}, threshold: $threshold, isMatch: $isMatch');
 
     return {
       'match': isMatch,

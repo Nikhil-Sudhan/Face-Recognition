@@ -140,7 +140,7 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
       if (mounted) {
         setState(() {
           _isCameraInitialized = true;
-          _statusMessage = 'Position your face in the frame';
+          _statusMessage = '👤 Position your face in the center';
         });
         _startFaceDetection();
       }
@@ -176,18 +176,18 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
       if (faces.isNotEmpty && !_photoTaken) {
         setState(() {
           _faceDetected = true;
-          _statusMessage = 'Face detected! Taking photo...';
+          _statusMessage = '✓ Face detected! Hold steady...';
         });
 
-        // Wait a brief moment for UI update
-        await Future.delayed(const Duration(milliseconds: 300));
+        // Wait a brief moment for UI update and stability
+        await Future.delayed(const Duration(milliseconds: 500));
 
         // Take the final photo
         await _takePhoto();
       } else {
         setState(() {
           _faceDetected = false;
-          _statusMessage = 'Position your face in the frame';
+          _statusMessage = '👤 Position your face in the center';
         });
       }
 
@@ -207,7 +207,7 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
 
     setState(() {
       _photoTaken = true;
-      _statusMessage = 'Photo captured!';
+      _statusMessage = '📸 Photo captured! Processing...';
     });
 
     try {
@@ -217,7 +217,7 @@ class _FaceDetectionCameraPageState extends State<FaceDetectionCameraPage> {
       widget.onPhotoTaken(imageFile.path);
 
       // Show success for a moment then close
-      await Future.delayed(const Duration(milliseconds: 1000));
+      await Future.delayed(const Duration(milliseconds: 800));
 
       if (mounted) {
         Navigator.pop(context);

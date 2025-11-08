@@ -76,7 +76,6 @@ class DatabaseService {
     if (oldVersion < 2 && newVersion >= 2) {
       // Add erpNextId column to employees table
       await db.execute('ALTER TABLE $_employeesTable ADD COLUMN erpNextId TEXT');
-      print('Database upgraded: Added erpNextId column');
     }
   }
 
@@ -246,7 +245,6 @@ class DatabaseService {
         'type': 'checkin'
       };
     } catch (e) {
-      print('Error marking attendance: $e');
       return {'success': false, 'message': 'Error marking attendance: $e'};
     }
   }

@@ -9,8 +9,8 @@ class FaceRecognitionService {
   static bool _isInitialized = false;
   static const double _threshold =
       0.55; // INCREASED from 0.35 to 0.55 for stricter matching (reduces false positives)
-  static const int _embeddingSize =
-      128; // Increased embedding size for better accuracy
+  static int _embeddingSize =
+      128; // Default embedding size, will be updated if FaceNet is available
 
   // Initialize the face recognition service
   static Future<bool> initialize() async {
@@ -18,19 +18,19 @@ class FaceRecognitionService {
 
     try {
       // Try to initialize FaceNet model
-      print('Attempting to initialize FaceNet model...');
       final faceNetInitialized = await FaceNetService.initialize();
       
       if (faceNetInitialized) {
-        print('✓ FaceNet model loaded successfully - using deep learning recognition');
+        // Update embedding size from FaceNet model
+        _embeddingSize = FaceNetService.getEmbeddingSize();
       } else {
-        print('⚠ FaceNet model not available - using fallback feature extraction');
+        // Keep default 128 for fallback
+        _embeddingSize = 128;
       }
       
       _isInitialized = true;
       return true;
     } catch (e) {
-      print('Error initializing face recognition: $e');
       return false;
     }
   }
@@ -275,18 +275,14 @@ class FaceRecognitionService {
       List<double> embedding;
       
       if (FaceNetService.isModelAvailable()) {
-        print('Using FaceNet deep learning model for embedding...');
         final faceNetEmbedding = await FaceNetService.generateEmbedding(faceImage);
         
         if (faceNetEmbedding != null) {
           embedding = faceNetEmbedding;
-          print('✓ FaceNet embedding generated (${embedding.length} dimensions)');
         } else {
-          print('⚠ FaceNet failed, using fallback features');
           embedding = _generateFaceFeatures(faceImage);
         }
       } else {
-        print('⚠ FaceNet not available, using fallback features');
         embedding = _generateFaceFeatures(faceImage);
       }
 
@@ -364,7 +360,6 @@ class FaceRecognitionService {
         metadata: imageMetadata,
       );
     } catch (e) {
-      print('Error converting camera image: $e');
       return null;
     }
   }
@@ -375,7 +370,6 @@ class FaceRecognitionService {
     try {
       return _cosineSimilarity(embedding1, embedding2);
     } catch (e) {
-      print('Error comparing embeddings: $e');
       return 0.0;
     }
   }
@@ -422,8 +416,6 @@ class FaceRecognitionService {
     // Use different threshold for FaceNet vs fallback
     final threshold = FaceNetService.isModelAvailable() ? 0.5 : _threshold;
     final isMatch = bestSimilarity >= threshold;
-    
-    print('Best match: $bestMatchId, similarity: ${bestSimilarity.toStringAsFixed(4)}, threshold: $threshold, isMatch: $isMatch');
 
     return {
       'match': isMatch,
@@ -443,7 +435,6 @@ class FaceRecognitionService {
     try {
       return encodedEmbedding.split(',').map((e) => double.parse(e)).toList();
     } catch (e) {
-      print('Error decoding embedding: $e');
       return List.filled(_embeddingSize, 0.0);
     }
   }

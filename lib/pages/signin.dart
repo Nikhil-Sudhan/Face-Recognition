@@ -94,8 +94,6 @@ class _LoginPageState extends State<LoginPage> {
           throw Exception('API credentials not found in response');
         }
         
-        print('Login successful - API Key: $apiKey');
-        
         // Store API credentials
         await ApiClient.setCredentials(
           baseUrl: api,
@@ -202,7 +200,6 @@ class _LoginPageState extends State<LoginPage> {
         return AlertDialog(
           title: const Text('Help'),
           content: const Text(
-            'Use username "root" and password "root" to sign in for demo.\n\n'
             'If you forgot your credentials, please contact your administrator.',
           ),
           actions: [

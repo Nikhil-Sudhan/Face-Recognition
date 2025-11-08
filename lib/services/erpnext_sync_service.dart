@@ -13,7 +13,7 @@ class ErpNextSyncService {
         return true;
       }
     } catch (e) {
-      print('Credential verification failed: $e');
+      // Credential verification failed
     }
 
     // Credentials invalid, try to re-authenticate
@@ -22,12 +22,9 @@ class ErpNextSyncService {
       final apiCreds = await AppSecureStorage.readCredentials();
       
       if (userCreds == null || apiCreds == null) {
-        print('No saved credentials for re-authentication');
         return false;
       }
 
-      print('Re-authenticating with saved credentials...');
-      
       // Call HR login API to get fresh credentials
       final resp = await ApiClient.post(
         '/api/method/cmenu.api.hr_login',
@@ -38,14 +35,12 @@ class ErpNextSyncService {
       );
 
       if (resp.statusCode != 200) {
-        print('Re-authentication failed with status: ${resp.statusCode}');
         return false;
       }
 
       // Extract user details from response
       final userDetails = resp.data['message'];
       if (userDetails == null) {
-        print('Invalid response from re-authentication');
         return false;
       }
       
@@ -53,7 +48,6 @@ class ErpNextSyncService {
       final apiSecret = userDetails['api_secret'];
       
       if (apiKey == null || apiSecret == null) {
-        print('API credentials not found in response');
         return false;
       }
       
@@ -64,10 +58,8 @@ class ErpNextSyncService {
         apiSecret: apiSecret,
       );
       
-      print('Re-authentication successful with API key: $apiKey');
       return true;
     } catch (e) {
-      print('Re-authentication failed: $e');
       return false;
     }
   }
@@ -222,31 +214,21 @@ class ErpNextSyncService {
     String? erpNextId, // Optional: if provided, skip employee search
   }) async {
     try {
-      print('=== Upload Face Data Debug ===');
-      print('Email: $email');
-      print('ERPNext ID: $erpNextId');
-      print('Face data length: ${faceData.length}');
-      
       // Ensure we have valid credentials before uploading
       if (!await _ensureAuthentication()) {
-        print('Authentication failed');
         return {
           'success': false,
           'message': 'Authentication failed. Please login again.',
         };
       }
-      print('Authentication successful');
 
       String employeeName;
 
       // If we have ERPNext ID, use it directly
       if (erpNextId != null && erpNextId.isNotEmpty) {
         employeeName = erpNextId;
-        print('Using provided ERPNext ID: $employeeName');
       } else {
         // Otherwise, search for employee by email
-        print('Searching for employee with email: $email');
-        
         // Try company_email first
         var employeeResp = await ApiClient.get(
           '/api/resource/Employee',
@@ -257,13 +239,9 @@ class ErpNextSyncService {
           },
         );
 
-        print('Company email search response status: ${employeeResp.statusCode}');
-        print('Company email search response data: ${employeeResp.data}');
-
         // If not found, try personal_email
         if (employeeResp.data == null || 
             (employeeResp.data['data'] as List).isEmpty) {
-          print('Not found by company_email, trying personal_email...');
           employeeResp = await ApiClient.get(
             '/api/resource/Employee',
             query: {
@@ -272,14 +250,11 @@ class ErpNextSyncService {
               'limit': 1,
             },
           );
-          print('Personal email search response status: ${employeeResp.statusCode}');
-          print('Personal email search response data: ${employeeResp.data}');
         }
 
         if (employeeResp.statusCode != 200 || 
             employeeResp.data == null || 
             (employeeResp.data['data'] as List).isEmpty) {
-          print('Employee not found for email: $email');
           return {
             'success': false,
             'message': 'Employee not found in ERPNext for email: $email',
@@ -287,11 +262,9 @@ class ErpNextSyncService {
         }
 
         employeeName = employeeResp.data['data'][0]['name'] as String;
-        print('Found employee: $employeeName');
       }
 
       // Update the employee with face data using direct API endpoint
-      print('Updating employee $employeeName with face data...');
       final updateResp = await ApiClient.put(
         '/api/resource/Employee/$employeeName',
         data: {
@@ -299,12 +272,7 @@ class ErpNextSyncService {
         },
       );
 
-      print('Update response status: ${updateResp.statusCode}');
-      print('Update response data: ${updateResp.data}');
-
       if (updateResp.statusCode == 200) {
-        print('Face data uploaded successfully');
-        
         // Update local database with ERPNext ID if we found it via search
         if (erpNextId == null || erpNextId.isEmpty) {
           try {
@@ -324,10 +292,9 @@ class ErpNextSyncService {
                 faceData: localEmployee.faceData,
               );
               await DatabaseService.updateEmployee(updatedEmployee);
-              print('Updated local employee with ERPNext ID: $employeeName');
             }
           } catch (e) {
-            print('Failed to update local employee with ERPNext ID: $e');
+            // Failed to update local employee
           }
         }
         
@@ -338,23 +305,11 @@ class ErpNextSyncService {
         };
       }
 
-      print('Failed to upload face data - unexpected status code');
       return {
         'success': false,
         'message': 'Failed to upload face data - Status: ${updateResp.statusCode}',
       };
     } on DioException catch (e) {
-      print('DioException during face data upload:');
-      print('Type: ${e.type}');
-      print('Message: ${e.message}');
-      print('Response status: ${e.response?.statusCode}');
-      print('Response data: ${e.response?.data}');
-      print('DioException during face data upload:');
-      print('Type: ${e.type}');
-      print('Message: ${e.message}');
-      print('Response status: ${e.response?.statusCode}');
-      print('Response data: ${e.response?.data}');
-      
       String errorMessage = 'Network error uploading face data';
       if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
         errorMessage = 'Authentication failed. Please login again.';
@@ -370,7 +325,6 @@ class ErpNextSyncService {
         'error': e.toString(),
       };
     } catch (e) {
-      print('General exception during face data upload: $e');
       return {
         'success': false,
         'message': 'Unexpected error uploading face data',

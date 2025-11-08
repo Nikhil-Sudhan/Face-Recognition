@@ -50,7 +50,6 @@ class SimpleImageStorage {
 
       return savedFile.path;
     } catch (e) {
-      print('Error saving face image with simple storage: $e');
       rethrow;
     }
   }
@@ -68,7 +67,6 @@ class SimpleImageStorage {
       }
       return null;
     } catch (e) {
-      print('Error getting face image with simple storage: $e');
       return null;
     }
   }
@@ -87,7 +85,6 @@ class SimpleImageStorage {
       }
       return false;
     } catch (e) {
-      print('Error deleting face image with simple storage: $e');
       return false;
     }
   }
@@ -101,7 +98,6 @@ class SimpleImageStorage {
       // Save new image
       return await saveFaceImage(tempImagePath, empId);
     } catch (e) {
-      print('Error updating face image with simple storage: $e');
       rethrow;
     }
   }

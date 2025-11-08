@@ -24,9 +24,7 @@ class AuthService {
       await prefs.setString('user_name', username);
       await prefs.setBool('is_logged_in', true);
     } catch (e) {
-      if (kDebugMode) {
-        print('Error storing login data: $e');
-      }
+      // Error storing login data
     }
   }
 
@@ -44,9 +42,7 @@ class AuthService {
         };
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Error getting stored login data: $e');
-      }
+      // Error getting stored login data
     }
     return null;
   }

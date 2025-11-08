@@ -20,6 +20,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _autoMarkAttendance = true;
   int _attendanceThresholdSeconds = 30; // Default 30 seconds
   bool _livenessDetectionEnabled = true; // Default enabled for security
+  String _deviceType = 'BOTH'; // IN, OUT, or BOTH
 
   @override
   void initState() {
@@ -33,6 +34,7 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       _attendanceThresholdSeconds = prefs.getInt('attendance_threshold_seconds') ?? 30;
       _livenessDetectionEnabled = prefs.getBool('liveness_detection_enabled') ?? true;
+      _deviceType = prefs.getString('device_type') ?? 'BOTH';
     });
   }
 
@@ -50,6 +52,15 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       _livenessDetectionEnabled = enabled;
     });
+  }
+
+  Future<void> _saveDeviceType(String type) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('device_type', type);
+    setState(() {
+      _deviceType = type;
+    });
+    _showSnackBar('Device type set to $type', Colors.green);
   }
 
   Future<void> _checkCameraPermission() async {
@@ -675,6 +686,88 @@ class _SettingsPageState extends State<SettingsPage> {
                           onChanged: (value) {
                             _saveLivenessDetection(value);
                           },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    // Device Type Setting
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.device_hub, size: 18, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Text(
+                              'Device Type',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Set whether this device is for IN only, OUT only, or BOTH',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('IN Device'),
+                                subtitle: const Text('Check-in only'),
+                                value: 'IN',
+                                groupValue: _deviceType,
+                                onChanged: (value) {
+                                  if (value != null) _saveDeviceType(value);
+                                },
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('OUT Device'),
+                                subtitle: const Text('Check-out only'),
+                                value: 'OUT',
+                                groupValue: _deviceType,
+                                onChanged: (value) {
+                                  if (value != null) _saveDeviceType(value);
+                                },
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('BOTH (Auto Toggle)'),
+                                subtitle: const Text('Auto IN/OUT toggle'),
+                                value: 'BOTH',
+                                groupValue: _deviceType,
+                                onChanged: (value) {
+                                  if (value != null) _saveDeviceType(value);
+                                },
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

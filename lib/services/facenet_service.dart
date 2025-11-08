@@ -6,31 +6,25 @@ class FaceNetService {
   static Interpreter? _interpreter;
   static bool _isInitialized = false;
   static const double _threshold = 0.5; // Cosine similarity threshold for face matching
-  static const int _embeddingSize = 128; // FaceNet output size
+  static int _embeddingSize = 512; // FaceNet output size (will be set dynamically from model)
 
   /// Initialize FaceNet model
   static Future<bool> initialize() async {
     if (_isInitialized) return true;
 
     try {
-      print('Initializing FaceNet model...');
-      
       // Load the TFLite model
       _interpreter = await Interpreter.fromAsset('assets/models/facenet.tflite');
       
-      // Get input and output tensor shapes
-      final inputShape = _interpreter!.getInputTensor(0).shape;
+      // Get output tensor shape
       final outputShape = _interpreter!.getOutputTensor(0).shape;
       
-      print('FaceNet model loaded successfully');
-      print('Input shape: $inputShape');
-      print('Output shape: $outputShape');
+      // Set embedding size dynamically from model output shape
+      _embeddingSize = outputShape[1]; // [1, 512] -> 512
       
       _isInitialized = true;
       return true;
     } catch (e) {
-      print('Error initializing FaceNet model: $e');
-      print('Make sure facenet.tflite is placed in assets/models/');
       _isInitialized = false;
       return false;
     }
@@ -41,10 +35,14 @@ class FaceNetService {
     return _isInitialized && _interpreter != null;
   }
 
+  /// Get the embedding size (512 for this model)
+  static int getEmbeddingSize() {
+    return _embeddingSize;
+  }
+
   /// Generate face embedding using FaceNet
   static Future<List<double>?> generateEmbedding(img.Image faceImage) async {
     if (!_isInitialized || _interpreter == null) {
-      print('FaceNet model not initialized');
       return null;
     }
 
@@ -53,14 +51,14 @@ class FaceNetService {
       final inputShape = _interpreter!.getInputTensor(0).shape;
       final inputSize = inputShape[1]; // Assuming square input (e.g., 160x160)
       
-      print('Preparing image for FaceNet (size: $inputSize x $inputSize)...');
+      // Enhance image quality before processing
+      final enhancedImage = _enhanceImage(faceImage);
       
-      // Resize and normalize image for FaceNet
-      final processedImage = _preprocessImage(faceImage, inputSize);
+      // Resize and normalize image for FaceNet - returns already shaped [1, h, w, 3]
+      final input = _preprocessImage(enhancedImage, inputSize);
       
-      // Prepare input and output buffers
-      final input = processedImage.reshape([1, inputSize, inputSize, 3]);
-      final output = List.filled(1 * _embeddingSize, 0.0).reshape([1, _embeddingSize]);
+      // Prepare output buffer
+      final output = List.generate(1, (_) => List.filled(_embeddingSize, 0.0));
       
       // Run inference
       _interpreter!.run(input, output);
@@ -69,12 +67,19 @@ class FaceNetService {
       final embedding = List<double>.from(output[0]);
       final normalized = _normalizeEmbedding(embedding);
       
-      print('Generated FaceNet embedding (${normalized.length} dimensions)');
       return normalized;
     } catch (e) {
-      print('Error generating FaceNet embedding: $e');
       return null;
     }
+  }
+
+  /// Enhance image quality before FaceNet processing
+  static img.Image _enhanceImage(img.Image image) {
+    // Auto-adjust contrast for better feature extraction
+    final adjusted = img.adjustColor(image, contrast: 1.1, brightness: 1.05);
+    
+    // Apply slight sharpening to enhance facial features
+    return img.adjustColor(adjusted, saturation: 1.05);
   }
 
   /// Preprocess image for FaceNet input
@@ -152,9 +157,6 @@ class FaceNetService {
     }
 
     final isMatch = bestSimilarity >= _threshold;
-
-    print('Best match: $bestMatchId with similarity: ${bestSimilarity.toStringAsFixed(4)}');
-    print('Threshold: $_threshold, Match: $isMatch');
 
     return {
       'match': isMatch,

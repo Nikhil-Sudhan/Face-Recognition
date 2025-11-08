@@ -11,11 +11,9 @@ class ImageStorageService {
     try {
       return await getApplicationDocumentsDirectory();
     } catch (e) {
-      print('Error getting documents directory, trying support directory: $e');
       try {
         return await getApplicationSupportDirectory();
       } catch (e2) {
-        print('Error getting support directory, using temporary: $e2');
         return await getTemporaryDirectory();
       }
     }
@@ -57,11 +55,9 @@ class ImageStorageService {
 
       return savedFile.path;
     } catch (e) {
-      print('Error saving face image with path_provider: $e');
       try {
         return await SimpleImageStorage.saveFaceImage(tempImagePath, empId);
       } catch (e2) {
-        print('Error with fallback storage: $e2');
         rethrow;
       }
     }
@@ -80,11 +76,9 @@ class ImageStorageService {
       }
       return null;
     } catch (e) {
-      print('Error getting face image with path_provider: $e');
       try {
         return await SimpleImageStorage.getFaceImagePath(empId);
       } catch (e2) {
-        print('Error with fallback storage: $e2');
         return null;
       }
     }
@@ -104,7 +98,6 @@ class ImageStorageService {
       }
       return false;
     } catch (e) {
-      print('Error deleting face image: $e');
       return false;
     }
   }
@@ -118,11 +111,9 @@ class ImageStorageService {
       // Save new image
       return await saveFaceImage(tempImagePath, empId);
     } catch (e) {
-      print('Error updating face image with path_provider: $e');
       try {
         return await SimpleImageStorage.updateFaceImage(tempImagePath, empId);
       } catch (e2) {
-        print('Error with fallback storage: $e2');
         rethrow;
       }
     }
@@ -173,7 +164,6 @@ class ImageStorageService {
 
       return 'Exported $copiedCount images to: $exportPath';
     } catch (e) {
-      print('Error exporting face images: $e');
       rethrow;
     }
   }
@@ -202,7 +192,6 @@ class ImageStorageService {
         'storagePath': faceDir.path,
       };
     } catch (e) {
-      print('Error getting storage info: $e');
       return {
         'imageCount': 0,
         'totalSizeBytes': 0,
@@ -236,7 +225,6 @@ class ImageStorageService {
 
       return deletedCount;
     } catch (e) {
-      print('Error cleaning up orphaned images: $e');
       return 0;
     }
   }

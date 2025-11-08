@@ -7,9 +7,10 @@ import 'dart:async';
 import 'dart:io';
 import '../services/face_recognition_service.dart';
 import '../services/database_service.dart';
-import '../services/api_client.dart';
+import '../services/attendance_service.dart';
 import '../services/liveness_detection_service.dart';
 import '../services/mpin_service.dart';
+import '../services/face_mapping_service.dart';
 import '../models/employee.dart';
 import 'mpin_verification_page.dart';
 import 'homepage.dart';
@@ -36,6 +37,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
   Timer? _detectionTimer;
 
   String _statusMessage = 'Initializing...';
+  String _deviceType = 'BOTH'; // Device type setting
   Employee? _recognizedEmployee;
   double _recognitionConfidence = 0.0;
 
@@ -43,7 +45,15 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
   void initState() {
     super.initState();
     _initializeFaceDetector();
+    _loadDeviceType();
     _requestPermissionsAndInitialize();
+  }
+
+  Future<void> _loadDeviceType() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _deviceType = prefs.getString('device_type') ?? 'BOTH';
+    });
   }
 
   void _initializeFaceDetector() {
@@ -183,9 +193,6 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
 
           if (!mounted) return;
 
-          print('Liveness detection result: ${livenessResult['isLive']}');
-          print('Liveness confidence: ${livenessResult['confidence']}');
-
           if (livenessResult['isLive'] != true) {
             // Fake face detected!
             setState(() {
@@ -232,7 +239,6 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
       // Clean up the detection image
       await File(imageFile.path).delete();
     } catch (e) {
-      print('Error in face detection: $e');
       if (mounted) {
         setState(() {
           _statusMessage = 'Error detecting face: $e';
@@ -290,7 +296,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
               FaceRecognitionService.decodeEmbedding(employee.faceData!);
           storedEmbeddings[employee.empId.toString()] = embedding;
         } catch (e) {
-          print('Error decoding embedding for employee ${employee.empId}: $e');
+          // Skip this employee if embedding decode fails
         }
       }
 
@@ -330,7 +336,6 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
         });
       }
     } catch (e) {
-      print('Error recognizing face: $e');
       if (mounted) {
         setState(() {
           _statusMessage = 'Error recognizing face: $e';
@@ -341,24 +346,15 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
 
   Future<void> _markAttendance(Employee employee, double confidence) async {
     try {
-      print('=== Marking Attendance ===');
-      print('Employee ID: ${employee.empId}');
-      print('Employee Name: ${employee.name}');
-      print('ERPNext ID: ${employee.erpNextId}');
-      print('Confidence: $confidence');
-
       // Get threshold from settings
       final prefs = await SharedPreferences.getInstance();
       final thresholdSeconds = prefs.getInt('attendance_threshold_seconds') ?? 30;
-      print('Threshold: $thresholdSeconds seconds');
 
       // Mark attendance locally first with threshold check
       final localResult = await DatabaseService.markAttendance(
         employee.empId,
         thresholdSeconds: thresholdSeconds,
       );
-      print('Local attendance result: ${localResult['success']}');
-      print('Local attendance message: ${localResult['message']}');
 
       // If threshold not met, show warning message and return
       if (!localResult['success'] && localResult['type'] == 'threshold_not_met') {
@@ -385,36 +381,17 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
         return;
       }
 
-      // If employee has ERPNext ID, post to ERPNext Employee Checkin
-      if (employee.erpNextId != null && employee.erpNextId!.isNotEmpty) {
-        try {
-          print('Posting to ERPNext Employee Checkin...');
-          final now = DateTime.now().toIso8601String();
-          
-          final checkinResp = await ApiClient.post(
-            '/api/resource/Employee Checkin',
-            data: {
-              'employee': employee.erpNextId,
-              'time': now,
-              'device_id': 'MobileAPP',
-              // log_type will be auto-determined by ERPNext or left empty as per requirement
-            },
-          );
-
-          print('ERPNext checkin response status: ${checkinResp.statusCode}');
-          print('ERPNext checkin response data: ${checkinResp.data}');
-
-          if (checkinResp.statusCode == 200 || checkinResp.statusCode == 201) {
-            print('✓ Attendance posted to ERPNext successfully');
-          } else {
-            print('✗ ERPNext checkin failed with status: ${checkinResp.statusCode}');
-          }
-        } catch (e) {
-          print('✗ Error posting to ERPNext: $e');
-          // Don't fail local attendance if ERPNext fails
+      // Post to ERPNext using AttendanceService (handles device type settings)
+      try {
+        // Get employee email from mapping service
+        final email = await FaceMappingService.getEmailForEmployeeId(employee.empId);
+        
+        if (email != null && email.isNotEmpty) {
+          // Use AttendanceService which handles device type (IN/OUT/BOTH) from settings
+          await AttendanceService.checkinByEmail(email);
         }
-      } else {
-        print('Skipping ERPNext checkin - no ERPNext ID for employee');
+      } catch (e) {
+        // Don't fail local attendance if ERPNext fails
       }
 
       setState(() {
@@ -446,7 +423,16 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
   }
 
   Future<void> _switchCamera() async {
-    if (_cameras.length > 1 && !_isDetecting && !_attendanceMarked) {
+    if (_cameras.length > 1 && !_attendanceMarked) {
+      // Stop detection timer before switching
+      _detectionTimer?.cancel();
+      _detectionTimer = null;
+      
+      setState(() {
+        _isDetecting = false;
+        _faceDetected = false;
+      });
+      
       _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
       await _setupCamera(_selectedCameraIndex);
     }
@@ -518,8 +504,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
           actions: [
           if (_cameras.length > 1)
             IconButton(
-              onPressed:
-                  _isDetecting || _attendanceMarked ? null : _switchCamera,
+              onPressed: _attendanceMarked ? null : _switchCamera,
               icon: const Icon(
                 Icons.flip_camera_ios,
                 color: Colors.white,
@@ -591,6 +576,45 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
                         ),
                       )
                     : null,
+              ),
+            ),
+
+          // Device Type Indicator (only show for IN or OUT, not BOTH)
+          if (_deviceType != 'BOTH')
+            Positioned(
+              top: 20,
+              left: 20,
+              right: 20,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _deviceType == 'IN' 
+                        ? Colors.green.withOpacity(0.9)
+                        : Colors.orange.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _deviceType == 'IN' ? Icons.login : Icons.logout,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$_deviceType Device',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
 

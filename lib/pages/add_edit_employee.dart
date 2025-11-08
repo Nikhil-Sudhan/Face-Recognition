@@ -280,11 +280,40 @@ class _AddEditEmployeePageState extends State<AddEditEmployeePage> {
     });
 
     try {
+      // Show processing dialog
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Processing face with FaceNet AI...'),
+                SizedBox(height: 8),
+                Text(
+                  'This may take a few seconds',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+
       // Create XFile from path for processing
       final imageFile = XFile(imagePath);
 
       // Process image to get face embedding
+      print('📸 Starting face processing for registration...');
       final result = await FaceRecognitionService.processCameraImage(imageFile);
+
+      // Close processing dialog
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
 
       if (result['success'] == true) {
         final embedding = result['embedding'] as List<double>;
@@ -295,16 +324,29 @@ class _AddEditEmployeePageState extends State<AddEditEmployeePage> {
           _faceQuality = quality;
         });
 
+        // Show detailed success message
+        final embeddingType = embedding.length == 512 
+            ? 'FaceNet AI (512-dim)' 
+            : 'Fallback (${embedding.length}-dim)';
+        
         _showSnackBar(
-          'Face features extracted! Quality: ${(quality * 100).toInt()}%',
+          'Face registered with $embeddingType! Quality: ${(quality * 100).toInt()}%',
           Colors.green,
         );
+        
+        print('✓ Face embedding generated: ${embedding.length} dimensions, Quality: ${(quality * 100).toInt()}%');
       } else {
         _showSnackBar(
             result['message'] ?? 'Failed to process face', Colors.red);
+        print('✗ Face processing failed: ${result['message']}');
       }
     } catch (e) {
+      // Close processing dialog if still open
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       _showSnackBar('Error processing face: $e', Colors.red);
+      print('✗ Error processing face: $e');
     } finally {
       setState(() {
         _isLoading = false;

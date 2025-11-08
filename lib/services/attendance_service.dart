@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
 
 class AttendanceService {
@@ -53,6 +54,10 @@ class AttendanceService {
   }
 
   static Future<Map<String, dynamic>> checkinByEmail(String email) async {
+    // Get device type setting
+    final prefs = await SharedPreferences.getInstance();
+    final deviceType = prefs.getString('device_type') ?? 'BOTH';
+    
     final employeeName = await _getEmployeeNameByEmail(email);
     if (employeeName == null) {
       return {
@@ -60,20 +65,36 @@ class AttendanceService {
         'message': 'Employee not found for email $email',
       };
     }
-    final logType = await _getNextLogType(employeeName);
+    
+    // Determine log type based on device type
+    String? logType;
+    if (deviceType == 'IN') {
+      logType = 'IN';
+    } else if (deviceType == 'OUT') {
+      logType = 'OUT';
+    } else {
+      // BOTH - auto toggle based on last checkin (empty string as per ERPNext)
+      logType = await _getNextLogType(employeeName);
+    }
 
     final nowIso = DateTime.now().toIso8601String();
     try {
-      final resp = await ApiClient.post('/api/resource/Employee%20Checkin', data: {
+      final data = {
         'employee': employeeName,
-        'log_type': logType,
         'time': nowIso,
-      });
+      };
+      
+      // Only add log_type if device is IN or OUT, empty for BOTH
+      if (deviceType != 'BOTH') {
+        data['log_type'] = logType;
+      }
+      
+      final resp = await ApiClient.post('/api/resource/Employee%20Checkin', data: data);
 
       if (resp.statusCode == 200 || resp.statusCode == 201) {
         return {
           'success': true,
-          'message': 'Attendance $logType recorded',
+          'message': 'Attendance ${deviceType == "BOTH" ? logType : deviceType} recorded',
           'employee': employeeName,
           'log_type': logType,
           'time': nowIso,

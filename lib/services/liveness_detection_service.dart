@@ -49,13 +49,6 @@ class LivenessDetectionService {
       final colorScore = _analyzeColorDistribution(faceRegion);
       final blurScore = _analyzeBlur(faceRegion);
 
-      print('=== Liveness Detection Scores ===');
-      print('Texture: ${textureScore.toStringAsFixed(3)}');
-      print('Brightness: ${brightnessScore.toStringAsFixed(3)}');
-      print('Edge: ${edgeScore.toStringAsFixed(3)}');
-      print('Color: ${colorScore.toStringAsFixed(3)}');
-      print('Blur: ${blurScore.toStringAsFixed(3)}');
-
       // Weighted average (adjust weights based on testing)
       final livenessScore = (
         textureScore * 0.30 +
@@ -64,8 +57,6 @@ class LivenessDetectionService {
         colorScore * 0.20 +
         blurScore * 0.10
       );
-
-      print('Final Liveness Score: ${livenessScore.toStringAsFixed(3)}');
 
       // Threshold for liveness (adjust based on testing)
       // Real faces should score > 0.5, photos/screens typically < 0.4
@@ -94,7 +85,6 @@ class LivenessDetectionService {
         },
       };
     } catch (e) {
-      print('Error in liveness detection: $e');
       return {
         'isLive': false,
         'confidence': 0.0,

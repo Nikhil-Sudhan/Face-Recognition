@@ -31,6 +31,11 @@ class _AddEditEmployeePageState extends State<AddEditEmployeePage> {
   List<double>? _faceEmbedding;
   double _faceQuality = 0.0;
   final ImagePicker _picker = ImagePicker();
+  
+  // Multi-photo capture for better accuracy
+  List<String> _capturedFaceImages = [];
+  List<List<double>> _capturedEmbeddings = [];
+  int _targetPhotoCount = 3; // Number of photos to capture for better accuracy
 
   @override
   void initState() {
@@ -253,6 +258,43 @@ class _AddEditEmployeePageState extends State<AddEditEmployeePage> {
   }
 
   Future<void> _openFaceDetectionCamera() async {
+    // Show dialog to choose single or multi-photo capture
+    final captureMode = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Face Capture Mode'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Colors.blue),
+              title: const Text('Quick Capture'),
+              subtitle: const Text('Take 1 photo (faster)'),
+              onTap: () => Navigator.pop(context, 'single'),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.photo_camera, color: Colors.green),
+              title: const Text('High Accuracy Capture'),
+              subtitle: Text('Take $_targetPhotoCount photos (recommended)'),
+              trailing: const Icon(Icons.star, color: Colors.amber),
+              onTap: () => Navigator.pop(context, 'multi'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (captureMode == null) return;
+
+    if (captureMode == 'single') {
+      await _captureSinglePhoto();
+    } else {
+      await _captureMultiplePhotos();
+    }
+  }
+
+  Future<void> _captureSinglePhoto() async {
     try {
       await Navigator.push(
         context,
@@ -271,6 +313,269 @@ class _AddEditEmployeePageState extends State<AddEditEmployeePage> {
       );
     } catch (e) {
       _showSnackBar('Error opening face detection camera: $e', Colors.red);
+    }
+  }
+
+  Future<void> _captureMultiplePhotos() async {
+    // Reset previous captures
+    _capturedFaceImages.clear();
+    _capturedEmbeddings.clear();
+
+    for (int i = 0; i < _targetPhotoCount; i++) {
+      final photoNumber = i + 1;
+      
+      // Show instructions for each photo
+      final shouldContinue = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: Text('Photo $photoNumber of $_targetPhotoCount'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _getPhotoInstructionIcon(i),
+                size: 64,
+                color: Colors.blue,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _getPhotoInstruction(i),
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This helps improve face recognition accuracy',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+          actions: [
+            if (i > 0)
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Take Photo'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldContinue != true) {
+        _showSnackBar('Face capture cancelled', Colors.orange);
+        return;
+      }
+
+      // Capture photo
+      String? capturedPath;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => FaceDetectionCameraPage(
+            onPhotoTaken: (imagePath) {
+              capturedPath = imagePath;
+            },
+          ),
+        ),
+      );
+
+      if (capturedPath == null) {
+        _showSnackBar('Photo capture cancelled', Colors.orange);
+        return;
+      }
+
+      // Process the captured photo
+      final success = await _processSinglePhotoForMultiCapture(capturedPath!, photoNumber);
+      
+      if (!success) {
+        _showSnackBar('Failed to process photo $photoNumber. Please try again.', Colors.red);
+        i--; // Retry this photo
+        continue;
+      }
+    }
+
+    // All photos captured successfully - create average embedding
+    await _createAverageEmbedding();
+  }
+
+  IconData _getPhotoInstructionIcon(int index) {
+    switch (index) {
+      case 0:
+        return Icons.face;
+      case 1:
+        return Icons.face_retouching_natural;
+      case 2:
+        return Icons.sentiment_satisfied;
+      default:
+        return Icons.camera_alt;
+    }
+  }
+
+  String _getPhotoInstruction(int index) {
+    switch (index) {
+      case 0:
+        return 'Look straight at the camera\nwith a neutral expression';
+      case 1:
+        return 'Tilt your head slightly\nto the left or right';
+      case 2:
+        return 'Look straight again\nwith a slight smile';
+      default:
+        return 'Look at the camera';
+    }
+  }
+
+  Future<bool> _processSinglePhotoForMultiCapture(String imagePath, int photoNumber) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Show processing dialog
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text('Processing photo $photoNumber/$_targetPhotoCount...'),
+              ],
+            ),
+          ),
+        );
+      }
+
+      final imageFile = XFile(imagePath);
+      final result = await FaceRecognitionService.processCameraImage(imageFile);
+
+      // Close processing dialog
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+
+      if (result['success'] == true) {
+        final embedding = result['embedding'] as List<double>;
+        final quality = (result['quality'] as num).toDouble();
+
+        _capturedFaceImages.add(imagePath);
+        _capturedEmbeddings.add(embedding);
+
+        _showSnackBar(
+          'Photo $photoNumber captured! Quality: ${(quality * 100).toInt()}%',
+          Colors.green,
+        );
+
+        return true;
+      } else {
+        _showSnackBar(
+          result['message'] ?? 'Failed to process photo $photoNumber',
+          Colors.red,
+        );
+        return false;
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      _showSnackBar('Error processing photo: $e', Colors.red);
+      return false;
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _createAverageEmbedding() async {
+    if (_capturedEmbeddings.isEmpty) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Show processing dialog
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Creating optimized face profile...'),
+                SizedBox(height: 8),
+                Text(
+                  'Combining multiple photos for best accuracy',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+
+      // Calculate average embedding
+      final embeddingSize = _capturedEmbeddings.first.length;
+      final averageEmbedding = List<double>.filled(embeddingSize, 0.0);
+
+      for (final embedding in _capturedEmbeddings) {
+        for (int i = 0; i < embeddingSize; i++) {
+          averageEmbedding[i] += embedding[i];
+        }
+      }
+
+      for (int i = 0; i < embeddingSize; i++) {
+        averageEmbedding[i] /= _capturedEmbeddings.length;
+      }
+
+      // Normalize the averaged embedding
+      final magnitude = averageEmbedding.fold<double>(
+        0.0,
+        (sum, val) => sum + (val * val),
+      );
+      final normalizedEmbedding = averageEmbedding.map((val) => val / magnitude).toList();
+
+      setState(() {
+        _faceEmbedding = normalizedEmbedding;
+        _faceImagePath = _capturedFaceImages.first; // Use first photo as display image
+        _faceQuality = 0.95; // High quality due to multi-photo average
+      });
+
+      // Close processing dialog
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+
+      // Show success message
+      final embeddingType = embeddingSize == 512 
+          ? 'FaceNet AI (512-dim)' 
+          : 'Fallback (${embeddingSize}-dim)';
+      
+      _showSnackBar(
+        '✓ High-accuracy profile created!\n$embeddingType averaged from $_targetPhotoCount photos',
+        Colors.green,
+      );
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      _showSnackBar('Error creating face profile: $e', Colors.red);
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -665,21 +970,46 @@ class _AddEditEmployeePageState extends State<AddEditEmployeePage> {
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: Colors.green.shade200),
                           ),
-                          child: Row(
+                          child: Column(
                             children: [
-                              Icon(Icons.check_circle,
-                                  color: Colors.green.shade600, size: 16),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Face features extracted and ready for recognition',
-                                  style: TextStyle(
-                                    color: Colors.green.shade700,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
+                              Row(
+                                children: [
+                                  Icon(Icons.check_circle,
+                                      color: Colors.green.shade600, size: 16),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _capturedEmbeddings.length > 1
+                                          ? 'High-accuracy profile (${_capturedEmbeddings.length} photos averaged)'
+                                          : 'Face features extracted and ready',
+                                      style: TextStyle(
+                                        color: Colors.green.shade700,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_capturedEmbeddings.length > 1)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Row(
+                                    children: [
+                                      const SizedBox(width: 24),
+                                      Icon(Icons.auto_awesome,
+                                          color: Colors.amber.shade600, size: 14),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Enhanced accuracy mode enabled',
+                                        style: TextStyle(
+                                          color: Colors.green.shade600,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ),
                             ],
                           ),
                         ),

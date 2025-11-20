@@ -160,7 +160,12 @@ class FaceRecognitionService {
     return vector.map((x) => x / magnitude).toList();
   }
 
-  // Calculate cosine similarity between two embeddings
+  // Calculate cosine similarity between two embeddings (PUBLIC method for verification)
+  static double calculateSimilarity(List<double> embedding1, List<double> embedding2) {
+    return _cosineSimilarity(embedding1, embedding2);
+  }
+
+  // Calculate cosine similarity between two embeddings (internal)
   static double _cosineSimilarity(
       List<double> embedding1, List<double> embedding2) {
     if (embedding1.length != embedding2.length) {
@@ -204,11 +209,11 @@ class FaceRecognitionService {
       final faceDetector = FaceDetector(
         options: FaceDetectorOptions(
           enableContours: false,
-          enableLandmarks: true, // Enable landmarks for better validation
+          enableLandmarks: false, // OPTIMIZED: Disabled for faster processing
           enableClassification: false,
           enableTracking: false,
           minFaceSize: 0.15, // Increased minimum face size
-          performanceMode: FaceDetectorMode.accurate,
+          performanceMode: FaceDetectorMode.fast, // OPTIMIZED: Changed to fast mode
         ),
       );
 
@@ -236,14 +241,8 @@ class FaceRecognitionService {
       final face = faces.first;
       final faceRect = face.boundingBox;
 
-      // Check face orientation
-      if (face.headEulerAngleY != null && face.headEulerAngleY!.abs() > 30) {
-        return {
-          'success': false,
-          'message': 'Please face the camera directly (head turned too much)',
-          'faceCount': 1,
-        };
-      }
+      // OPTIMIZED: Removed orientation check for faster processing
+      // (Can be re-enabled if needed for quality control)
 
       // Check face size - ensure minimum quality
       final faceArea = faceRect.width * faceRect.height;
@@ -387,6 +386,8 @@ class FaceRecognitionService {
     String? bestMatchId;
     final List<Map<String, dynamic>> allMatches = [];
 
+    print('🔍 Finding best match among ${storedEmbeddings.length} employees');
+    
     // Use FaceNet similarity calculation if available, otherwise use fallback
     for (final entry in storedEmbeddings.entries) {
       final double similarity;
@@ -398,6 +399,8 @@ class FaceRecognitionService {
         // Use fallback comparison
         similarity = compareEmbeddings(queryEmbedding, entry.value);
       }
+
+      print('   Employee ID ${entry.key}: ${(similarity * 100).toStringAsFixed(2)}%');
 
       allMatches.add({
         'employeeId': entry.key,
@@ -416,6 +419,9 @@ class FaceRecognitionService {
     // Use different threshold for FaceNet vs fallback
     final threshold = FaceNetService.isModelAvailable() ? 0.5 : _threshold;
     final isMatch = bestSimilarity >= threshold;
+
+    print('📊 Best match: Employee ID $bestMatchId with ${(bestSimilarity * 100).toStringAsFixed(2)}% (threshold: ${(threshold * 100).toStringAsFixed(0)}%)');
+    print('   Match result: ${isMatch ? "✓ MATCHED" : "✗ NO MATCH"}');
 
     return {
       'match': isMatch,

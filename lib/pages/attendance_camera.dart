@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image/image.dart' as img;
 import 'dart:async';
 import 'dart:io';
 import '../services/face_recognition_service.dart';
@@ -30,16 +32,24 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
   bool _isRecognizing = false;
   bool _attendanceMarked = false;
   bool _thresholdWarning = false; // Flag for threshold warning display
+  bool _isProcessingAttendance = false; // CRITICAL: Lock to prevent concurrent processing
   List<CameraDescription> _cameras = [];
   int _selectedCameraIndex = 0;
 
   late FaceDetector _faceDetector;
   Timer? _detectionTimer;
+  
+  // Platform channel for screen wake lock
+  static const MethodChannel _channel = MethodChannel('face_recognition/screen');
 
   String _statusMessage = 'Initializing...';
   String _deviceType = 'BOTH'; // Device type setting
   Employee? _recognizedEmployee;
   double _recognitionConfidence = 0.0;
+  
+  // Track last processed employee to prevent double processing
+  int? _lastProcessedEmployeeId;
+  DateTime? _lastProcessedTime;
 
   @override
   void initState() {
@@ -131,6 +141,10 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
 
     try {
       await _controller!.initialize();
+      
+      // Keep screen awake during camera usage
+      await _setScreenAwake(true);
+      
       if (mounted) {
         setState(() {
           _isCameraInitialized = true;
@@ -149,22 +163,32 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
     // Cancel existing timer if any
     _detectionTimer?.cancel();
     
+    // OPTIMIZED: Reduced from 1000ms to 500ms for faster detection cycles
     _detectionTimer =
-        Timer.periodic(const Duration(milliseconds: 1000), (timer) {
+        Timer.periodic(const Duration(milliseconds: 500), (timer) {
       // Check if widget is still mounted before proceeding
       if (!mounted) {
         timer.cancel();
         return;
       }
       
-      if (_isCameraInitialized && !_isDetecting && !_attendanceMarked && !_thresholdWarning) {
+      // CRITICAL: Check all blocking conditions including processing lock
+      if (_isCameraInitialized && !_isDetecting && !_attendanceMarked && !_thresholdWarning && !_isProcessingAttendance) {
         _detectAndRecognizeFace();
       }
     });
   }
 
   Future<void> _detectAndRecognizeFace() async {
-    if (_isDetecting || !_isCameraInitialized || _attendanceMarked || !mounted) return;
+    // CRITICAL: Multiple locks to prevent concurrent processing
+    if (_isDetecting || 
+        !_isCameraInitialized || 
+        _attendanceMarked || 
+        _thresholdWarning || 
+        _isProcessingAttendance ||
+        !mounted) {
+      return;
+    }
 
     setState(() {
       _isDetecting = true;
@@ -174,8 +198,24 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
     try {
       final XFile imageFile = await _controller!.takePicture();
 
-      final inputImage = InputImage.fromFilePath(imageFile.path);
+      // OPTIMIZED: Use lower resolution for faster processing
+      final bytes = await imageFile.readAsBytes();
+      final decodedImage = img.decodeImage(bytes);
+      
+      if (decodedImage == null) {
+        throw Exception('Failed to decode image');
+      }
+      
+      // Resize to 640px width for faster processing (maintains aspect ratio)
+      final resizedImage = img.copyResize(decodedImage, width: 640);
+      final tempPath = '${imageFile.path}_resized.jpg';
+      await File(tempPath).writeAsBytes(img.encodeJpg(resizedImage, quality: 85));
+      
+      final inputImage = InputImage.fromFilePath(tempPath);
       final faces = await _faceDetector.processImage(inputImage);
+      
+      // Clean up resized temp file
+      await File(tempPath).delete();
 
       if (!mounted) return; // Check again after async operation
 
@@ -257,6 +297,15 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
   Future<void> _recognizeFace(XFile imageFile) async {
     if (!mounted) return;
     
+    // CRITICAL: Check if already processing
+    if (_isRecognizing || _attendanceMarked || _isProcessingAttendance) {
+      return;
+    }
+    
+    setState(() {
+      _isRecognizing = true;
+    });
+    
     try {
       // Process the image to get face embedding
       final result = await FaceRecognitionService.processCameraImage(imageFile);
@@ -266,6 +315,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
       if (result['success'] != true) {
         setState(() {
           _statusMessage = result['message'] ?? 'Failed to process face';
+          _isRecognizing = false;
         });
         return;
       }
@@ -284,21 +334,31 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
         setState(() {
           _statusMessage =
               'No registered faces found. Please register employees first.';
+          _isRecognizing = false;
         });
         return;
       }
 
-      // Create map of stored embeddings
-      final Map<String, List<double>> storedEmbeddings = {};
+      // CRITICAL: Create map with employee objects, not just embeddings
+      final Map<String, Map<String, dynamic>> employeeData = {};
       for (final employee in employeesWithFaces) {
         try {
           final embedding =
               FaceRecognitionService.decodeEmbedding(employee.faceData!);
-          storedEmbeddings[employee.empId.toString()] = embedding;
+          employeeData[employee.empId.toString()] = {
+            'embedding': embedding,
+            'employee': employee,
+          };
         } catch (e) {
           // Skip this employee if embedding decode fails
         }
       }
+
+      // Create embedding map for recognition
+      final Map<String, List<double>> storedEmbeddings = {};
+      employeeData.forEach((empId, data) {
+        storedEmbeddings[empId] = data['embedding'] as List<double>;
+      });
 
       // Perform face recognition
       final recognitionResult = FaceRecognitionService.findBestMatch(
@@ -306,14 +366,81 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
 
       if (recognitionResult['match'] == true) {
         final employeeIdStr = recognitionResult['employeeId'] as String;
-        final employeeId = int.parse(employeeIdStr);
         final confidence = recognitionResult['confidence'] as double;
 
-        // Find the recognized employee
-        final recognizedEmployee =
-            employeesWithFaces.firstWhere((emp) => emp.empId == employeeId);
+        // CRITICAL: Get employee from our stored data to ensure consistency
+        final employeeInfo = employeeData[employeeIdStr];
+        if (employeeInfo == null) {
+          if (mounted) {
+            setState(() {
+              _statusMessage = 'Error: Employee data inconsistency for ID $employeeIdStr';
+              _isRecognizing = false;
+            });
+          }
+          return;
+        }
 
-        // Mark attendance
+        final recognizedEmployee = employeeInfo['employee'] as Employee;
+        final storedEmbedding = employeeInfo['embedding'] as List<double>;
+
+        // Double-check: Verify this is the correct employee by re-matching
+        try {
+          final similarity = FaceRecognitionService.calculateSimilarity(
+            capturedEmbedding, 
+            storedEmbedding
+          );
+          
+          // Log for debugging
+          debugPrint('🔍 Recognition Result:');
+          debugPrint('   Employee: ${recognizedEmployee.name} (ID: ${recognizedEmployee.empId})');
+          debugPrint('   Confidence: ${(confidence * 100).toStringAsFixed(2)}%');
+          debugPrint('   Verification: ${(similarity * 100).toStringAsFixed(2)}%');
+          
+          // Check if this is a duplicate detection of same person within 5 seconds
+          if (_lastProcessedEmployeeId == recognizedEmployee.empId && 
+              _lastProcessedTime != null &&
+              DateTime.now().difference(_lastProcessedTime!).inSeconds < 5) {
+            debugPrint('⚠️  Duplicate detection prevented - same employee within 5 seconds');
+            if (mounted) {
+              setState(() {
+                _isRecognizing = false;
+              });
+            }
+            return;
+          }
+          
+          if (similarity < 0.5) {
+            // Similarity too low, reject
+            if (mounted) {
+              setState(() {
+                _statusMessage = 'Face match verification failed for ${recognizedEmployee.name}\n(similarity: ${(similarity * 100).toStringAsFixed(1)}%)';
+                _isRecognizing = false;
+              });
+            }
+            
+            // Reset after showing error
+            await Future.delayed(const Duration(seconds: 2));
+            if (mounted && !_attendanceMarked) {
+              setState(() {
+                _statusMessage = 'Position your face in the frame';
+              });
+            }
+            return;
+          }
+          
+          debugPrint('✓ Verification passed - marking attendance');
+        } catch (e) {
+          debugPrint('✗ Verification error: $e');
+          if (mounted) {
+            setState(() {
+              _statusMessage = 'Error verifying face match: $e';
+              _isRecognizing = false;
+            });
+          }
+          return;
+        }
+
+        // Mark attendance with verified employee
         await _markAttendance(recognizedEmployee, confidence);
       } else {
         final confidence = recognitionResult['confidence'] as double;
@@ -321,30 +448,51 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
         if (mounted) {
           setState(() {
             _statusMessage =
-                'Face not identified (confidence: ${confidence.toStringAsFixed(3)})';
+                'Face not identified (confidence: ${(confidence * 100).toStringAsFixed(1)}%)';
             _recognitionConfidence = confidence;
+            _isRecognizing = false;
           });
         }
 
         // Show not identified message for a few seconds
-        Timer(const Duration(seconds: 3), () {
-          if (mounted && !_attendanceMarked) {
-            setState(() {
-              _statusMessage = 'Position your face in the frame';
-            });
-          }
-        });
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted && !_attendanceMarked) {
+          setState(() {
+            _statusMessage = 'Position your face in the frame';
+          });
+        }
       }
     } catch (e) {
+      debugPrint('✗ Recognition error: $e');
       if (mounted) {
         setState(() {
           _statusMessage = 'Error recognizing face: $e';
+          _isRecognizing = false;
         });
       }
     }
   }
 
   Future<void> _markAttendance(Employee employee, double confidence) async {
+    // CRITICAL: Set processing lock immediately
+    if (_isProcessingAttendance) {
+      debugPrint('⚠️  Already processing attendance, skipping...');
+      return;
+    }
+    
+    setState(() {
+      _isProcessingAttendance = true;
+    });
+    
+    // CRITICAL: Stop face detection immediately to prevent double captures
+    _detectionTimer?.cancel();
+    
+    // Track this employee to prevent duplicate processing
+    _lastProcessedEmployeeId = employee.empId;
+    _lastProcessedTime = DateTime.now();
+    
+    debugPrint('📝 Marking attendance for ${employee.name} (ID: ${employee.empId})');
+    
     try {
       // Get threshold from settings
       final prefs = await SharedPreferences.getInstance();
@@ -365,19 +513,21 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
           _statusMessage = localResult['message'];
         });
 
-        // Wait 2 seconds to show the warning message, then reset for next employee
-        Timer(const Duration(seconds: 2), () {
-          if (mounted) {
-            setState(() {
-              _thresholdWarning = false;
-              _recognizedEmployee = null;
-              _recognitionConfidence = 0.0;
-              _statusMessage = 'Position your face in the frame';
-            });
-            // Resume detection for next employee
-            _startFaceDetection();
-          }
-        });
+        // Wait 3 seconds to show the warning message, then reset for next employee
+        await Future.delayed(const Duration(seconds: 3));
+        
+        if (mounted) {
+          setState(() {
+            _thresholdWarning = false;
+            _recognizedEmployee = null;
+            _recognitionConfidence = 0.0;
+            _faceDetected = false;
+            _isProcessingAttendance = false; // Release lock
+            _statusMessage = 'Position your face in the frame';
+          });
+          // Resume detection for next employee
+          _startFaceDetection();
+        }
         return;
       }
 
@@ -398,27 +548,51 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
         _attendanceMarked = localResult['success'] == true;
         _recognizedEmployee = employee;
         _recognitionConfidence = confidence;
+        _faceDetected = true;
         _statusMessage =
             (localResult['message'] as String?) ?? 'Attendance marked successfully!';
       });
 
-      // Wait 2 seconds to show the success message, then reset for next employee
-      Timer(const Duration(seconds: 2), () {
+      // Wait 3 seconds to show the success message, then FULLY reset for next employee
+      await Future.delayed(const Duration(seconds: 3));
+      
+      debugPrint('✓ Attendance marked, resetting for next employee');
+      
+      if (mounted) {
+        setState(() {
+          _attendanceMarked = false;
+          _recognizedEmployee = null;
+          _recognitionConfidence = 0.0;
+          _faceDetected = false;
+          _isDetecting = false;
+          _isRecognizing = false;
+          _isProcessingAttendance = false; // Release lock
+          _statusMessage = 'Position your face in the frame';
+        });
+        
+        // Small delay before resuming detection to ensure state is fully reset
+        await Future.delayed(const Duration(milliseconds: 500));
+        
         if (mounted) {
-          setState(() {
-            _attendanceMarked = false;
-            _recognizedEmployee = null;
-            _recognitionConfidence = 0.0;
-            _statusMessage = 'Position your face in the frame';
-          });
+          debugPrint('🔄 Resuming detection for next employee');
           // Resume detection for next employee
           _startFaceDetection();
         }
-      });
+      }
     } catch (e) {
+      debugPrint('✗ Error marking attendance: $e');
       setState(() {
         _statusMessage = 'Error marking attendance: $e';
+        _attendanceMarked = false;
+        _recognizedEmployee = null;
+        _isProcessingAttendance = false; // Release lock
       });
+      
+      // Resume detection even after error
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) {
+        _startFaceDetection();
+      }
     }
   }
 
@@ -847,6 +1021,9 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
     _detectionTimer?.cancel();
     _detectionTimer = null;
     
+    // Allow screen to sleep again
+    _setScreenAwake(false);
+    
     // Stop and dispose camera
     _controller?.dispose();
     _controller = null;
@@ -855,5 +1032,25 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
     _faceDetector.close();
     
     super.dispose();
+  }
+  
+  // Method to control screen wake lock
+  Future<void> _setScreenAwake(bool keepAwake) async {
+    try {
+      if (keepAwake) {
+        await _channel.invokeMethod('keepScreenOn');
+      } else {
+        await _channel.invokeMethod('allowScreenOff');
+      }
+    } catch (e) {
+      // Fallback: Use SystemChrome if platform channel fails
+      if (keepAwake) {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, 
+          overlays: [SystemUiOverlay.bottom]);
+      } else {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, 
+          overlays: SystemUiOverlay.values);
+      }
+    }
   }
 }

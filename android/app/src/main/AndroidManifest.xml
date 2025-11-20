@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     
     <application
-        android:label="face_recognition_attendance"
+        android:label="Gro Face+"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

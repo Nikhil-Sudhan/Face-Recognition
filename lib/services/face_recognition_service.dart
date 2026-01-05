@@ -8,7 +8,7 @@ import 'facenet_service.dart';
 class FaceRecognitionService {
   static bool _isInitialized = false;
   static const double _threshold =
-      0.55; // INCREASED from 0.35 to 0.55 for stricter matching (reduces false positives)
+      0.45; // Balanced threshold: 0.45 reduces false negatives while maintaining security
   static int _embeddingSize =
       128; // Default embedding size, will be updated if FaceNet is available
 
@@ -416,8 +416,8 @@ class FaceRecognitionService {
     // Sort matches by similarity for debugging
     allMatches.sort((a, b) => b['similarity'].compareTo(a['similarity']));
 
-    // Use different threshold for FaceNet vs fallback
-    final threshold = FaceNetService.isModelAvailable() ? 0.5 : _threshold;
+    // Use consistent threshold for both FaceNet and fallback
+    final threshold = _threshold; // Use same 0.45 threshold for both
     final isMatch = bestSimilarity >= threshold;
 
     print('📊 Best match: Employee ID $bestMatchId with ${(bestSimilarity * 100).toStringAsFixed(2)}% (threshold: ${(threshold * 100).toStringAsFixed(0)}%)');

@@ -19,6 +19,12 @@ class DatabaseService {
     return _database!;
   }
 
+  // Public method to reinitialize database (useful after import/restore)
+  static Future<void> initialize() async {
+    _database = null;
+    _database = await _initDatabase();
+  }
+
   // Initialize database
   static Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), _databaseName);

@@ -54,6 +54,23 @@ class ApiClient {
       };
     }
 
+    // Add response interceptor for debugging
+    dio.interceptors.add(InterceptorsWrapper(
+      onResponse: (response, handler) {
+        print('API Response [${response.statusCode}] ${response.requestOptions.method} ${response.requestOptions.uri}');
+        print('Response data: ${response.data}');
+        handler.next(response);
+      },
+      onError: (error, handler) {
+        print('API Error [${error.response?.statusCode}] ${error.requestOptions.method} ${error.requestOptions.uri}');
+        print('Error message: ${error.message}');
+        if (error.response?.data != null) {
+          print('Error data: ${error.response?.data}');
+        }
+        handler.next(error);
+      },
+    ));
+
     // Using in-memory cookie header above; persistence can be added later if needed
 
     _dio = dio;
@@ -71,12 +88,14 @@ class ApiClient {
     required String apiKey,
     required String apiSecret,
   }) async {
+    print('Setting API credentials: baseUrl=$baseUrl, apiKey=$apiKey (secret hidden)');
     await AppSecureStorage.saveCredentials(
       apiBaseUrl: baseUrl,
       apiKey: apiKey,
       apiSecret: apiSecret,
     );
     _dio = null;
+    print('Credentials saved, Dio instance reset');
   }
 
   static void setAllowSelfSigned(bool allow) {

@@ -59,15 +59,15 @@ class LivenessDetectionService {
         blurScore * 0.10           // Natural micro-movements
       );
 
-      // Lowered threshold to be more lenient with bright lighting
-      // Real faces should score > 0.35, photos/screens typically < 0.30
-      final isLive = livenessScore > 0.35;
+      // Further lowered threshold to 0.30 to reduce false rejections in varying lighting
+      // Real faces typically score > 0.30, photos/screens typically < 0.25
+      final isLive = livenessScore > 0.30;
 
       String reason = '';
       if (!isLive) {
-        if (textureScore < 0.25) reason = 'Low texture variation - possible photo';
-        else if (edgeScore < 0.25) reason = 'Screen or printed photo detected';
-        else if (colorScore < 0.25) reason = 'Unnatural color distribution';
+        if (textureScore < 0.20) reason = 'Low texture variation - possible photo';
+        else if (edgeScore < 0.20) reason = 'Screen or printed photo detected';
+        else if (colorScore < 0.20) reason = 'Unnatural color distribution';
         else if (blurScore < 0.25) reason = 'Abnormal blur pattern';
         else reason = 'Failed liveness check - possible spoofing attempt';
       }

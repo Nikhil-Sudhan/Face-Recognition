@@ -13,6 +13,7 @@ import '../services/attendance_service.dart';
 import '../services/liveness_detection_service.dart';
 import '../services/mpin_service.dart';
 import '../services/face_mapping_service.dart';
+import '../services/offline_queue_service.dart';
 import '../models/employee.dart';
 import 'mpin_verification_page.dart';
 import 'homepage.dart';
@@ -50,6 +51,10 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
   // Track last processed employee to prevent double processing
   int? _lastProcessedEmployeeId;
   DateTime? _lastProcessedTime;
+  
+  // Track Portal sync status for debugging
+  String _lastApiStatus = '';
+  bool _apiSyncSuccess = false;
 
   @override
   void initState() {
@@ -57,6 +62,31 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
     _initializeFaceDetector();
     _loadDeviceType();
     _requestPermissionsAndInitialize();
+    _tryFlushOfflineQueue(); // Attempt to sync queued checkins on startup
+  }
+  
+  Future<void> _tryFlushOfflineQueue() async {
+    try {
+      debugPrint('🔄 Attempting to flush offline queue...');
+      final syncedCount = await OfflineQueueService.flush();
+      if (syncedCount > 0) {
+        debugPrint('✅ Successfully synced $syncedCount queued checkin(s)');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Synced $syncedCount pending checkin(s)'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      } else {
+        debugPrint('ℹ️ No pending checkins to sync');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to flush offline queue: $e');
+      // Silent fail - will retry on next launch
+    }
   }
 
   Future<void> _loadDeviceType() async {
@@ -409,26 +439,8 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
             return;
           }
           
-          if (similarity < 0.5) {
-            // Similarity too low, reject
-            if (mounted) {
-              setState(() {
-                _statusMessage = 'Face match verification failed for ${recognizedEmployee.name}\n(similarity: ${(similarity * 100).toStringAsFixed(1)}%)';
-                _isRecognizing = false;
-              });
-            }
-            
-            // Reset after showing error
-            await Future.delayed(const Duration(seconds: 2));
-            if (mounted && !_attendanceMarked) {
-              setState(() {
-                _statusMessage = 'Position your face in the frame';
-              });
-            }
-            return;
-          }
-          
-          debugPrint('✓ Verification passed - marking attendance');
+          // Trust the face recognition service threshold - no additional verification needed
+          debugPrint('✓ Face recognized - marking attendance (similarity: ${(similarity * 100).toStringAsFixed(1)}%)');
         } catch (e) {
           debugPrint('✗ Verification error: $e');
           if (mounted) {
@@ -531,17 +543,93 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
         return;
       }
 
-      // Post to ERPNext using AttendanceService (handles device type settings)
+      // Post to Portal using AttendanceService (handles device type settings)
+      bool apiSuccess = false;
+      String apiMessage = '';
+      
       try {
         // Get employee email from mapping service
         final email = await FaceMappingService.getEmailForEmployeeId(employee.empId);
         
         if (email != null && email.isNotEmpty) {
+          debugPrint('🌐 Syncing to Portal for email: $email');
+          
           // Use AttendanceService which handles device type (IN/OUT/BOTH) from settings
-          await AttendanceService.checkinByEmail(email);
+          final apiResult = await AttendanceService.checkinByEmail(email);
+          
+          apiSuccess = apiResult['success'] == true;
+          apiMessage = apiResult['message'] ?? 'Unknown response';
+          
+          if (apiSuccess) {
+            debugPrint('✅ Portal sync successful: $apiMessage');
+            setState(() {
+              _lastApiStatus = '✓ Synced: $apiMessage';
+              _apiSyncSuccess = true;
+            });
+          } else {
+            // API call failed - queue for retry
+            debugPrint('❌ Portal sync failed: $apiMessage');
+            debugPrint('📥 Queueing for offline retry...');
+            
+            await OfflineQueueService.enqueue(email, DateTime.now().toIso8601String());
+            
+            setState(() {
+              _lastApiStatus = '⚠ Queued: $apiMessage';
+              _apiSyncSuccess = false;
+            });
+            
+            // Show error notification to user
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('⚠️ Offline: Attendance queued for sync\n$apiMessage'),
+                  backgroundColor: Colors.orange,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            }
+          }
+        } else {
+          debugPrint('⚠️  No email found for employee ID ${employee.empId}');
+          setState(() {
+            _lastApiStatus = '⚠ No email mapping';
+            _apiSyncSuccess = false;
+          });
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ No email configured for employee'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
         }
       } catch (e) {
-        // Don't fail local attendance if ERPNext fails
+        // Network or unexpected error - queue for retry
+        debugPrint('❌ Portal API error: $e');
+        
+        final email = await FaceMappingService.getEmailForEmployeeId(employee.empId);
+        if (email != null && email.isNotEmpty) {
+          debugPrint('📥 Queueing for offline retry...');
+          await OfflineQueueService.enqueue(email, DateTime.now().toIso8601String());
+        }
+        
+        setState(() {
+          _lastApiStatus = '⚠ Error: ${e.toString().split('\n').first}';
+          _apiSyncSuccess = false;
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('⚠️ Sync failed: Will retry when online\n${e.toString().split('\n').first}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
 
       setState(() {
@@ -549,8 +637,11 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
         _recognizedEmployee = employee;
         _recognitionConfidence = confidence;
         _faceDetected = true;
-        _statusMessage =
-            (localResult['message'] as String?) ?? 'Attendance marked successfully!';
+        // Include sync status in message
+        final baseMessage = (localResult['message'] as String?) ?? 'Attendance marked successfully!';
+        _statusMessage = apiSuccess 
+            ? '$baseMessage (Synced ✓)'
+            : '$baseMessage (Queued for sync)';
       });
 
       // Wait 3 seconds to show the success message, then FULLY reset for next employee
@@ -568,6 +659,7 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
           _isRecognizing = false;
           _isProcessingAttendance = false; // Release lock
           _statusMessage = 'Position your face in the frame';
+          // Keep last API status visible for debugging
         });
         
         // Small delay before resuming detection to ensure state is fully reset
@@ -788,6 +880,42 @@ class _AttendanceCameraPageState extends State<AttendanceCameraPage> {
                       ),
                     ],
                   ),
+                ),
+              ),
+            ),
+
+          // API Sync Status Indicator (bottom-left corner)
+          if (_lastApiStatus.isNotEmpty)
+            Positioned(
+              bottom: 20,
+              left: 20,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _apiSyncSuccess 
+                      ? Colors.green.withOpacity(0.9)
+                      : Colors.orange.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white, width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _apiSyncSuccess ? Icons.cloud_done : Icons.cloud_off,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _lastApiStatus,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

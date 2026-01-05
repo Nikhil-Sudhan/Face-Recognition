@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as path;
+import 'dart:io';
 import '../services/image_storage_service.dart';
 import '../services/database_service.dart';
 import '../services/auth_service.dart';
@@ -130,7 +134,7 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Future<void> _exportFaceImages() async {
+  Future<void> _exportDatabase() async {
     try {
       showDialog(
         context: context,
@@ -140,20 +144,101 @@ class _SettingsPageState extends State<SettingsPage> {
             children: [
               CircularProgressIndicator(),
               SizedBox(width: 16),
-              Text('Exporting images...'),
+              Text('Exporting database...'),
             ],
           ),
         ),
       );
 
-      final result = await ImageStorageService.exportAllFaceImages();
+      // Get database path
+      final dbPath = path.join(await getDatabasesPath(), 'attendance.db');
+      final dbFile = File(dbPath);
+
+      if (!await dbFile.exists()) {
+        Navigator.of(context).pop();
+        _showSnackBar('Database file not found', Colors.red);
+        return;
+      }
+
+      // Get external storage directory with proper permission handling
+      Directory? exportDir;
+      if (Platform.isAndroid) {
+        // For Android, request multiple storage-related permissions
+        Map<Permission, PermissionStatus> statuses = await [
+          Permission.storage,
+          Permission.manageExternalStorage,
+        ].request();
+        
+        // Check if either permission is granted
+        bool hasPermission = statuses[Permission.storage]?.isGranted == true ||
+                             statuses[Permission.manageExternalStorage]?.isGranted == true;
+        
+        if (!hasPermission) {
+          Navigator.of(context).pop();
+          
+          // Check if permanently denied
+          if (statuses[Permission.storage]?.isPermanentlyDenied == true ||
+              statuses[Permission.manageExternalStorage]?.isPermanentlyDenied == true) {
+            // Show dialog to open settings
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Permission Required'),
+                content: const Text(
+                  'Storage permission is required to save database backup.\n\n'
+                  'Please enable it in:\nSettings > Apps > Gro Face+ > Permissions > Files and media'
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      openAppSettings();
+                    },
+                    child: const Text('Open Settings'),
+                  ),
+                ],
+              ),
+            );
+          } else {
+            _showSnackBar('Storage permission denied. Please try again and allow access.', Colors.orange);
+          }
+          return;
+        }
+        
+        exportDir = Directory('/storage/emulated/0/Download');
+      } else {
+        exportDir = await getApplicationDocumentsDirectory();
+      }
+
+      // Create backup filename with timestamp
+      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.')[0];
+      final backupFileName = 'attendance_backup_$timestamp.db';
+      final backupPath = path.join(exportDir.path, backupFileName);
+
+      // Copy database file
+      await dbFile.copy(backupPath);
+
+      // Get employee count
+      final employees = await DatabaseService.getAllEmployees();
+      final withFaceData = employees.where((e) => e.faceData != null && e.faceData!.isNotEmpty).length;
+
       Navigator.of(context).pop(); // Close loading dialog
 
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Export Complete'),
-          content: Text(result),
+          title: const Text('✅ Backup Complete'),
+          content: Text(
+            'Database backed up successfully!\n\n'
+            'Location: ${exportDir?.path ?? "Unknown"}\n'
+            'File: $backupFileName\n\n'
+            'Employees: ${employees.length}\n'
+            'With Face Data: $withFaceData',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -165,6 +250,121 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (e) {
       Navigator.of(context).pop(); // Close loading dialog
       _showSnackBar('Export failed: $e', Colors.red);
+    }
+  }
+
+  Future<void> _importDatabase() async {
+    try {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('⚠️ Import Database'),
+          content: const Text(
+            'Import will:\n'
+            '• Replace all current employee data\n'
+            '• Replace all face embeddings\n'
+            '• Cannot be undone\n\n'
+            'Make sure you have a backup first!\n\n'
+            'Place your backup file as:\n'
+            '/storage/emulated/0/Download/attendance_import.db',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _performImport();
+              },
+              child: const Text('Import', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      _showSnackBar('Import failed: $e', Colors.red);
+    }
+  }
+
+  Future<void> _performImport() async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Importing database...'),
+            ],
+          ),
+        ),
+      );
+
+      // Look for import file
+      Directory importDir;
+      if (Platform.isAndroid) {
+        importDir = Directory('/storage/emulated/0/Download');
+      } else {
+        importDir = await getApplicationDocumentsDirectory();
+      }
+
+      final importFile = File(path.join(importDir.path, 'attendance_import.db'));
+
+      if (!await importFile.exists()) {
+        Navigator.of(context).pop();
+        _showSnackBar('Import file not found: ${importFile.path}', Colors.red);
+        return;
+      }
+
+      // Close current database connection
+      final db = await DatabaseService.database;
+      await db.close();
+
+      // Get database path and replace it
+      final dbPath = path.join(await getDatabasesPath(), 'attendance.db');
+      await importFile.copy(dbPath);
+
+      // Reinitialize database
+      await DatabaseService.initialize();
+
+      // Get stats
+      final employees = await DatabaseService.getAllEmployees();
+      final withFaceData = employees.where((e) => e.faceData != null && e.faceData!.isNotEmpty).length;
+
+      Navigator.of(context).pop();
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('✅ Import Complete'),
+          content: Text(
+            'Database imported successfully!\n\n'
+            'Employees: ${employees.length}\n'
+            'With Face Data: $withFaceData\n\n'
+            'App will restart for changes to take effect.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Force app restart by navigating to login
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const LoginPage()),
+                  (route) => false,
+                );
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      Navigator.of(context).pop();
+      _showSnackBar('Import failed: $e', Colors.red);
     }
   }
 
@@ -496,24 +696,18 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const SizedBox(height: 16),
                   ListTile(
-                    leading: const Icon(Icons.edit, color: Colors.blue),
-                    title: const Text('Edit Profiles'),
-                    subtitle: const Text('Select and edit employee profiles'),
+                    leading: const Icon(Icons.backup, color: Colors.green),
+                    title: const Text('Backup Database'),
+                    subtitle: const Text('Export SQLite DB (includes face embeddings)'),
                     contentPadding: EdgeInsets.zero,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => const ProfileSelectionPage()),
-                      );
-                    },
+                    onTap: _exportDatabase,
                   ),
                   ListTile(
-                    leading: const Icon(Icons.download, color: Colors.green),
-                    title: const Text('Export Face Images'),
-                    subtitle: const Text('Export all employee face photos'),
+                    leading: const Icon(Icons.restore, color: Colors.blue),
+                    title: const Text('Restore Database'),
+                    subtitle: const Text('Import backup from Download folder'),
                     contentPadding: EdgeInsets.zero,
-                    onTap: _exportFaceImages,
+                    onTap: _importDatabase,
                   ),
                   ListTile(
                     leading: const Icon(Icons.storage, color: Colors.purple),

@@ -478,30 +478,34 @@ class _UserDetailsPageState extends State<UserDetailsPage> {
             ),
           ),
 
-          // Bottom Buttons
+          // Bottom Info - Employees synced from ERPNext only
           if (!_isSelectionMode)
             Container(
               padding: const EdgeInsets.all(20),
               child: Center(
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _addEmployee,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Employees are synced from ERPNext only. Use sync button to add employees.',
+                          style: TextStyle(
+                            color: Colors.blue.shade700,
+                            fontSize: 14,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
-                    ),
-                    child: const Text(
-                      'Add',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    ],
                   ),
                 ),
               ),

@@ -19,11 +19,11 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final TextEditingController _clientCodeController =
-      TextEditingController(text: 'demo');
+      TextEditingController();
   final TextEditingController _usernameController =
-      TextEditingController(text: 'thomas550i@gmail.com');
+      TextEditingController();
   final TextEditingController _passwordController =
-      TextEditingController(text: 'Password.123');
+      TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   bool _allowSelfSigned = false;

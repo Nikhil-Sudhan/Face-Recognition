@@ -89,9 +89,11 @@ class AttendanceService {
         data['log_type'] = logType;
       }
       
+      print('Posting checkin for employee: $employeeName with data: $data');
       final resp = await ApiClient.post('/api/resource/Employee%20Checkin', data: data);
 
       if (resp.statusCode == 200 || resp.statusCode == 201) {
+        print('Checkin successful: ${resp.data}');
         return {
           'success': true,
           'message': 'Attendance ${deviceType == "BOTH" ? logType : deviceType} recorded',
@@ -100,14 +102,33 @@ class AttendanceService {
           'time': nowIso,
         };
       }
+      print('Unexpected status code: ${resp.statusCode}');
       return {
         'success': false,
-        'message': 'Unexpected status code',
+        'message': 'Unexpected status code: ${resp.statusCode}',
       };
-    } on DioException catch (_) {
+    } on DioException catch (e) {
+      print('Checkin DioException: ${e.type}');
+      print('Status code: ${e.response?.statusCode}');
+      print('Response data: ${e.response?.data}');
+      print('Error message: ${e.message}');
+      
+      if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+        return {
+          'success': false,
+          'message': 'Authentication failed. Status: ${e.response?.statusCode}',
+        };
+      }
+      
       return {
         'success': false,
-        'message': 'Network error. Will retry when online',
+        'message': 'Network error. Will retry when online. Details: ${e.message}',
+      };
+    } catch (e) {
+      print('Checkin unexpected error: $e');
+      return {
+        'success': false,
+        'message': 'Unexpected error: $e',
       };
     }
 

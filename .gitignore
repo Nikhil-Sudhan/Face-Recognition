@@ -44,6 +44,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Signing keys and passwords - NEVER commit these!
+/android/key.properties
+/android/keystore/*.jks
+/android/keystore/*.keystore
+
 # Platform-specific folders (auto-generated, should not be committed)
 # Uncomment the platforms you want to ignore
 # Only commit these if you have custom native code modifications
